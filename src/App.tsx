@@ -3,6 +3,7 @@ import { ModeProvider, useModeManager } from './components/ModeManager'
 import { ThreejsViewer } from './components/ThreejsViewer'
 import { AframeViewer } from './components/AframeViewer'
 import { ModeToggleUI } from './components/ModeToggleUI'
+import { Sidebar } from './components/Sidebar'
 import { useVRDetection } from './hooks/useVRDetection'
 import scenes from './data/scenes'
 
@@ -16,6 +17,9 @@ function AppContent() {
 
       {/* A-Frame VR/Gyro Modes */}
       {(mode === 'vr' || mode === 'gyro') && <AframeViewer scenes={scenes} />}
+
+      {/* Sidebar Navigation */}
+      <Sidebar scenes={scenes} />
 
       {/* Mode Toggle UI */}
       <ModeToggleUI />
