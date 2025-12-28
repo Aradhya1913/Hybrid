@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  plugins: [react()],
   server: { 
     port: 5173,
     allowedHosts: [
@@ -9,5 +11,12 @@ export default defineConfig({
       '.ngrok-free.app',
       '.ngrok.io'
     ]
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
+  optimizeDeps: {
+    exclude: ['aframe']
   }
 })

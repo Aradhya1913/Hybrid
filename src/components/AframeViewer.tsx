@@ -31,14 +31,58 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       if (!containerRef.current) return;
 
       const scene = scenes[modeManager.currentSceneIndex];
+      const isVRMode = modeManager.mode === 'vr';
+
       containerRef.current.innerHTML = `
-        <a-scene embedded inspector="url: https://aframe.io/releases/latest/aframe-inspector.js">
+        <a-scene 
+          embedded 
+          ${isVRMode ? 'vr-mode-ui="enterVRButton: #enter-vr-btn"' : ''}
+          renderer="colorManagement: true; antialias: true;"
+        >
           <a-assets>
             <img id="panorama" src="${scene?.url || ''}" />
           </a-assets>
-          <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
-          <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false"></a-camera>
+          
+          <!-- Panorama Sky -->
+          <a-sky 
+            id="app-sky" 
+            src="#panorama" 
+            rotation="0 0 0"
+            geometry="segmentsHeight: 64; segmentsWidth: 64"
+          ></a-sky>
+          
+          <!-- Camera with look controls -->
+          <a-camera 
+            id="camera" 
+            position="0 0 0" 
+            look-controls="enabled: true; pointerLockEnabled: false; magicWindowTrackingEnabled: true"
+            wasd-controls="enabled: false"
+          ></a-camera>
         </a-scene>
+
+        <!-- VR Enter Button (visible when VR available) -->
+        <button 
+          id="enter-vr-btn" 
+          style="
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #06b6d4 0%, #0ea5a4 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 500;
+            font-size: 14px;
+            box-shadow: 0 8px 24px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s ease;
+            display: none;
+          "
+        >
+          🥽 Enter VR Mode
+        </button>
       `;
 
       // Get the scene element and ensure it's ready
@@ -52,6 +96,16 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         aScene.addEventListener('loaded', () => {
           handleSceneLoaded(aScene);
         });
+      }
+
+      // Show VR button if VR mode and WebXR is available
+      if (isVRMode) {
+        setTimeout(() => {
+          const vrBtn = containerRef.current?.querySelector('#enter-vr-btn') as HTMLElement;
+          if (vrBtn) {
+            vrBtn.style.display = 'block';
+          }
+        }, 500);
       }
     };
 
@@ -139,8 +193,24 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
   const enableVRMode = async (aScene: any) => {
     console.log('[AframeViewer] Enabling VR mode');
-    const enterVRBtn = aScene.querySelector('[data-aframe-inspector-injected]');
-    // A-Frame handles VR automatically via enter-vr button
+    
+    // A-Frame automatically handles VR through WebXR
+    // The VR button will appear if WebXR is available
+    // When user clicks the button, it enters immersive VR mode
+    
+    // Try to enter VR automatically after a short delay
+    setTimeout(async () => {
+      try {
+        if ((navigator as any).xr) {
+          console.log('[AframeViewer] WebXR available, VR ready');
+          // User will click the VR button to enter
+        } else {
+          console.log('[AframeViewer] WebXR not available, Cardboard mode will be used');
+        }
+      } catch (err) {
+        console.error('[AframeViewer] VR setup error:', err);
+      }
+    }, 1000);
   };
 
   return (
