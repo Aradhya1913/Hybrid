@@ -31,21 +31,15 @@ function AppContent() {
           bottom: 20,
           left: 20,
           zIndex: 250,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
+          fontSize: 11,
+          color: '#ffffff',
+          fontWeight: 300,
+          lineHeight: '1.6',
+          pointerEvents: 'auto',
         }}
       >
-        {/* Developer Names */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-            fontSize: 12,
-            fontWeight: 500,
-          }}
-        >
+        <div style={{ textDecoration: 'underline' }}>• Developers</div>
+        <div style={{ marginLeft: 8 }}>
           <a
             href="https://www.linkedin.com/in/nandeesh-aradhya-r-317104269/"
             target="_blank"
@@ -53,27 +47,22 @@ function AppContent() {
             style={{
               color: '#ffffff',
               textDecoration: 'none',
-              backdropFilter: 'blur(10px)',
-              background: 'rgba(0, 0, 0, 0.3)',
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              transition: 'all 0.2s ease',
               cursor: 'pointer',
+              opacity: 0.8,
+              transition: 'opacity 0.2s ease',
             }}
             onMouseEnter={(e) => {
-              const el = e.target as HTMLElement;
-              el.style.background = 'rgba(0, 0, 0, 0.5)';
-              el.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+              (e.target as HTMLElement).style.opacity = '1';
+              (e.target as HTMLElement).style.textDecoration = 'underline';
             }}
             onMouseLeave={(e) => {
-              const el = e.target as HTMLElement;
-              el.style.background = 'rgba(0, 0, 0, 0.3)';
-              el.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              (e.target as HTMLElement).style.opacity = '0.8';
+              (e.target as HTMLElement).style.textDecoration = 'none';
             }}
           >
-            Nandeesh Aradhya
+            Nandeesh Aradhya R
           </a>
+          {' , '}
           <a
             href="https://www.linkedin.com/in/neha-s-85818625b/"
             target="_blank"
@@ -81,47 +70,23 @@ function AppContent() {
             style={{
               color: '#ffffff',
               textDecoration: 'none',
-              backdropFilter: 'blur(10px)',
-              background: 'rgba(0, 0, 0, 0.3)',
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              transition: 'all 0.2s ease',
               cursor: 'pointer',
+              opacity: 0.8,
+              transition: 'opacity 0.2s ease',
             }}
             onMouseEnter={(e) => {
-              const el = e.target as HTMLElement;
-              el.style.background = 'rgba(0, 0, 0, 0.5)';
-              el.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+              (e.target as HTMLElement).style.opacity = '1';
+              (e.target as HTMLElement).style.textDecoration = 'underline';
             }}
             onMouseLeave={(e) => {
-              const el = e.target as HTMLElement;
-              el.style.background = 'rgba(0, 0, 0, 0.3)';
-              el.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              (e.target as HTMLElement).style.opacity = '0.8';
+              (e.target as HTMLElement).style.textDecoration = 'none';
             }}
           >
             Neha S
           </a>
         </div>
-
-        {/* Development Status */}
-        <div
-          style={{
-            fontSize: 10,
-            color: '#ffffff',
-            backdropFilter: 'blur(10px)',
-            background: 'rgba(0, 0, 0, 0.3)',
-            padding: '4px 8px',
-            borderRadius: 4,
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            textAlign: 'center',
-            letterSpacing: '0.5px',
-            fontWeight: 400,
-            opacity: 0.8,
-          }}
-        >
-          in Development
-        </div>
+        <div style={{ marginTop: 6, opacity: 0.6 }}>• In Development</div>
       </div>
     </div>
   )
