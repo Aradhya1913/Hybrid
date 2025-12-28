@@ -12,9 +12,7 @@ const scenes: SceneDef[] = [
     title: 'Road View', 
     url: '/panos/spot1.jpg',
     hotSpots: [
-      { yaw: 45, pitch: 0, targetSceneId: 'spot2', text: 'Gate' },
-      { yaw: -90, pitch: 0, targetSceneId: 'spot3', text: 'Globe' },
-      { yaw: 135, pitch: 0, targetSceneId: 'spot4', text: 'Playground' }
+      { yaw: 175, pitch: -15, targetSceneId: 'spot2', text: 'Gate' },
     ]
   },
   { 
@@ -22,9 +20,9 @@ const scenes: SceneDef[] = [
     title: 'Inside Gate', 
     url: '/panos/spot2.jpg',
     hotSpots: [
-      { yaw: 0, pitch: 0, targetSceneId: 'spot1', text: 'Back' },
-      { yaw: 90, pitch: 0, targetSceneId: 'spot3', text: 'Forward' },
-      { yaw: 180, pitch: 0, targetSceneId: 'spot2b', text: 'Right' }
+      { yaw: 90, pitch: -25, targetSceneId: 'spot1', text: 'Back' },
+      { yaw: 290, pitch: -10, targetSceneId: 'spot3', text: 'Forward' },
+      { yaw: 210, pitch: -7, targetSceneId: 'spot2b', text: 'Right' }
     ]
   },
   { 
