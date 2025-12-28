@@ -23,8 +23,11 @@ export function ModeToggleUI() {
     // Request permission on iOS 13+
     if (capabilities.canRequestPermission) {
       try {
+        console.log('[ModeToggleUI] Requesting permission...');
         const permission = await (DeviceOrientationEvent as any).requestPermission();
+        console.log('[ModeToggleUI] Permission result:', permission);
         if (permission === 'granted') {
+          console.log('[ModeToggleUI] Switching to gyro mode');
           switchMode('gyro');
           setPermissionDenied(false);
         } else {
@@ -36,6 +39,7 @@ export function ModeToggleUI() {
       }
     } else {
       // Non-iOS, just enable
+      console.log('[ModeToggleUI] Non-iOS device, enabling gyro');
       switchMode('gyro');
       setPermissionDenied(false);
     }
