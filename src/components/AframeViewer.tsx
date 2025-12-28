@@ -192,25 +192,86 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   };
 
   const enableVRMode = async (aScene: any) => {
-    console.log('[AframeViewer] Enabling VR mode');
+    console.log('[AframeViewer] Enabling VR Cardboard mode');
+    const camera = aScene.querySelector('#camera') as any;
+    if (!camera) return;
+
+    // Enable stereo rendering for Cardboard VR
+    camera.setAttribute('camera', 'active: true');
+    camera.setAttribute('look-controls', 'enabled: true; pointerLockEnabled: false');
+
+    setTimeout(() => {
+      enableCardboardStereo(aScene, camera);
+    }, 100);
+  };
+
+  const enableCardboardStereo = (aScene: any, camera: any) => {
+    console.log('[AframeViewer] Enabling Cardboard stereo rendering');
+    const renderer = aScene.renderer as THREE.WebGLRenderer;
     
-    // A-Frame automatically handles VR through WebXR
-    // The VR button will appear if WebXR is available
-    // When user clicks the button, it enters immersive VR mode
-    
-    // Try to enter VR automatically after a short delay
-    setTimeout(async () => {
-      try {
-        if ((navigator as any).xr) {
-          console.log('[AframeViewer] WebXR available, VR ready');
-          // User will click the VR button to enter
-        } else {
-          console.log('[AframeViewer] WebXR not available, Cardboard mode will be used');
-        }
-      } catch (err) {
-        console.error('[AframeViewer] VR setup error:', err);
+    if (!renderer || !camera) return;
+
+    // Enable device orientation for gyro head tracking in VR
+    if (typeof DeviceOrientationEvent !== 'undefined') {
+      if ((DeviceOrientationEvent as any).requestPermission) {
+        (DeviceOrientationEvent as any)
+          .requestPermission()
+          .then((permission: string) => {
+            if (permission === 'granted') {
+              console.log('[VR] Permission granted, enabling gyro');
+              window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
+                const alpha = e.alpha || 0;
+                const beta = e.beta || 0;
+                const radBeta = (beta * Math.PI) / 180;
+                const radAlpha = (alpha * Math.PI) / 180;
+                const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
+
+                camera.setAttribute('rotation', {
+                  x: THREE.MathUtils.radToDeg(clampedBeta),
+                  y: THREE.MathUtils.radToDeg(radAlpha),
+                  z: 0,
+                });
+              });
+            }
+          })
+          .catch((err: any) => console.log('[VR] Permission denied:', err));
+      } else {
+        // Non-iOS
+        console.log('[VR] Non-iOS device, enabling gyro');
+        window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
+          const alpha = e.alpha || 0;
+          const beta = e.beta || 0;
+          const radBeta = (beta * Math.PI) / 180;
+          const radAlpha = (alpha * Math.PI) / 180;
+          const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
+
+          camera.setAttribute('rotation', {
+            x: THREE.MathUtils.radToDeg(clampedBeta),
+            y: THREE.MathUtils.radToDeg(radAlpha),
+            z: 0,
+          });
+        });
       }
-    }, 1000);
+    }
+
+    // Load Cardboard effect script for split-screen stereo
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/cardboard-vr-display@1.0.0/build/cardboard-vr-display.min.js';
+    script.async = true;
+    document.head.appendChild(script);
+
+    script.onload = () => {
+      console.log('[VR] Cardboard loaded, applying stereo');
+      // Request fullscreen for better VR experience
+      try {
+        const elem = (aScene.canvas || document.documentElement) as any;
+        elem.requestFullscreen?.() || 
+        elem.webkitRequestFullscreen?.() ||
+        elem.mozRequestFullScreen?.();
+      } catch (e) {
+        console.log('[VR] Fullscreen not available');
+      }
+    };
   };
 
   return (
