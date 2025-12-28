@@ -31,58 +31,16 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       if (!containerRef.current) return;
 
       const scene = scenes[modeManager.currentSceneIndex];
-      const isVRMode = modeManager.mode === 'vr';
-
       containerRef.current.innerHTML = `
-        <a-scene 
-          embedded 
-          ${isVRMode ? 'vr-mode-ui="enterVRButton: #enter-vr-btn"' : ''}
-          renderer="colorManagement: true; antialias: true;"
-        >
+        <a-scene embedded inspector="url: https://aframe.io/releases/latest/aframe-inspector.js">
           <a-assets>
             <img id="panorama" src="${scene?.url || ''}" />
+            <img id="arrow-icon" src="/ui/arrow.png" />
           </a-assets>
-          
-          <!-- Panorama Sky -->
-          <a-sky 
-            id="app-sky" 
-            src="#panorama" 
-            rotation="0 0 0"
-            geometry="segmentsHeight: 64; segmentsWidth: 64"
-          ></a-sky>
-          
-          <!-- Camera with look controls -->
-          <a-camera 
-            id="camera" 
-            position="0 0 0" 
-            look-controls="enabled: true; pointerLockEnabled: false; magicWindowTrackingEnabled: true"
-            wasd-controls="enabled: false"
-          ></a-camera>
+          <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
+          <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false"></a-camera>
+          <a-entity id="hotspots"></a-entity>
         </a-scene>
-
-        <!-- VR Enter Button (visible when VR available) -->
-        <button 
-          id="enter-vr-btn" 
-          style="
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            background: linear-gradient(135deg, #06b6d4 0%, #0ea5a4 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            z-index: 500;
-            font-size: 14px;
-            box-shadow: 0 8px 24px rgba(6, 182, 212, 0.4);
-            transition: all 0.3s ease;
-            display: none;
-          "
-        >
-          🥽 Enter VR Mode
-        </button>
       `;
 
       // Get the scene element and ensure it's ready
@@ -97,21 +55,14 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           handleSceneLoaded(aScene);
         });
       }
-
-      // Show VR button if VR mode and WebXR is available
-      if (isVRMode) {
-        setTimeout(() => {
-          const vrBtn = containerRef.current?.querySelector('#enter-vr-btn') as HTMLElement;
-          if (vrBtn) {
-            vrBtn.style.display = 'block';
-          }
-        }, 500);
-      }
     };
 
     const handleSceneLoaded = (aScene: any) => {
       const camera = aScene.querySelector('#camera') as any;
       if (!camera) return;
+
+      // Add hotspots
+      addHotspots(aScene);
 
       // Determine if we're in gyro or VR mode
       const isGyroMode = modeManager.mode === 'gyro';
@@ -119,7 +70,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       if (isGyroMode) {
         enableGyroMode(camera, aScene);
       } else if (modeManager.mode === 'vr') {
-        enableVRMode(aScene);
+        enableVRMode(aScene, camera);
       }
     };
 
@@ -131,6 +82,77 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       }
     };
   }, [scenes, modeManager.currentSceneIndex, modeManager.mode]);
+
+  const addHotspots = (aScene: any) => {
+    const hotspotContainer = aScene.querySelector('#hotspots') as any;
+    if (!hotspotContainer) return;
+
+    // Clear existing hotspots
+    while (hotspotContainer.firstChild) {
+      hotspotContainer.removeChild(hotspotContainer.firstChild);
+    }
+
+    const scene = scenes[modeManager.currentSceneIndex];
+    if (!scene) return;
+
+    // Add hotspots from scene data
+    if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
+      scene.hotSpots.forEach((hotspot) => {
+        addHotspot(hotspotContainer, hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, hotspot.text);
+      });
+    } else {
+      // Fallback: add a single hotspot to next scene
+      const nextIdx = (modeManager.currentSceneIndex + 1) % scenes.length;
+      addHotspot(hotspotContainer, 0, 0, scenes[nextIdx].id, 'Next');
+    }
+  };
+
+  const addHotspot = (
+    container: any,
+    yawDeg: number,
+    pitchDeg: number,
+    targetSceneId: string,
+    text?: string
+  ) => {
+    // Convert spherical to cartesian
+    const yaw = (yawDeg * Math.PI) / 180;
+    const pitch = (pitchDeg * Math.PI) / 180;
+    const distance = 5;
+
+    const x = distance * Math.cos(pitch) * Math.sin(yaw);
+    const y = distance * Math.sin(pitch);
+    const z = distance * Math.cos(pitch) * Math.cos(yaw);
+
+    const position = `${x} ${y} ${z}`;
+
+    // Create hotspot entity with arrow.png image
+    const hotspot = document.createElement('a-image');
+    hotspot.setAttribute('src', '#arrow-icon');
+    hotspot.setAttribute('position', position);
+    hotspot.setAttribute('scale', '0.8 0.8 0.8');
+    hotspot.setAttribute('look-at', '[camera]');
+    hotspot.classList.add('clickable');
+    hotspot.style.cursor = 'pointer';
+
+    // Handle click
+    hotspot.addEventListener('click', () => {
+      const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
+      if (targetIdx >= 0) {
+        modeManager.setCurrentScene(targetIdx);
+      }
+    });
+
+    // Handle hover
+    hotspot.addEventListener('mouseenter', () => {
+      hotspot.setAttribute('scale', '1 1 1');
+    });
+
+    hotspot.addEventListener('mouseleave', () => {
+      hotspot.setAttribute('scale', '0.8 0.8 0.8');
+    });
+
+    container.appendChild(hotspot);
+  };
 
   const enableGyroMode = async (camera: any, aScene: any) => {
     console.log('[AframeViewer] Enabling gyro mode');
@@ -158,21 +180,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   };
 
   const setupDeviceOrientation = (camera: any) => {
-    let alpha = 0;
-    let beta = 0;
-    let gamma = 0;
-
     const handleDeviceOrientation = (event: DeviceOrientationEvent) => {
-      alpha = event.alpha || 0; // Z axis rotation (yaw)
-      beta = event.beta || 0;   // X axis rotation (pitch)
-      gamma = event.gamma || 0; // Y axis rotation (roll)
+      const alpha = event.alpha || 0;
+      const beta = event.beta || 0;
 
-      // Apply rotation to camera
-      // A-Frame uses Euler angles with YXZ order
-      const radBeta = (beta * Math.PI) / 180;  // pitch
-      const radAlpha = (alpha * Math.PI) / 180; // yaw
+      const radBeta = (beta * Math.PI) / 180;
+      const radAlpha = (alpha * Math.PI) / 180;
 
-      // Clamp pitch to prevent flipping
       const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
 
       camera.setAttribute('rotation', {
@@ -180,8 +194,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         y: THREE.MathUtils.radToDeg(radAlpha),
         z: 0,
       });
-
-      console.log('[DeviceOrientation] alpha:', alpha, 'beta:', beta, 'gamma:', gamma);
     };
 
     window.addEventListener('deviceorientation', handleDeviceOrientation);
@@ -191,14 +203,8 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     };
   };
 
-  const enableVRMode = async (aScene: any) => {
+  const enableVRMode = async (aScene: any, camera: any) => {
     console.log('[AframeViewer] Enabling VR Cardboard mode');
-    const camera = aScene.querySelector('#camera') as any;
-    if (!camera) return;
-
-    // Enable stereo rendering for Cardboard VR
-    camera.setAttribute('camera', 'active: true');
-    camera.setAttribute('look-controls', 'enabled: true; pointerLockEnabled: false');
 
     setTimeout(() => {
       enableCardboardStereo(aScene, camera);

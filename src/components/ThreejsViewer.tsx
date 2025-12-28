@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useModeManager } from './ModeManager';
 import { SceneDef } from '../data/scenes';
@@ -134,11 +134,14 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
   }, []);
 
+  const [currentTitle, setCurrentTitle] = React.useState(scenes[0]?.title || '');
+
   const loadScene = (index: number) => {
     if (!scenes || scenes.length === 0) return;
     index = ((index % scenes.length) + scenes.length) % scenes.length;
 
     const scene = scenes[index];
+    setCurrentTitle(scene.title);
 
     // Load texture
     textureLoaderRef.current.load(
@@ -160,7 +163,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     clearHotspots();
     if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
       scene.hotSpots.forEach((hotspot) => {
-        addHotspot(hotspot.yaw, hotspot.pitch, hotspot.sceneId, {
+        addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
           size: 0.7,
           text: hotspot.text,
         });
@@ -196,33 +199,76 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const y = radius * Math.sin(pitch);
     const z = radius * Math.cos(pitch) * Math.cos(yaw);
 
-    // Sprite
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0)';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(128, 128, 100, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 48px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('→', 128, 128);
-    }
+    // Load arrow.png texture with enhanced error handling
+    const arrowPath = window.location.origin + '/ui/arrow.png';
+    textureLoaderRef.current.load(
+      arrowPath,
+      (texture) => {
+        // Ensure proper color space
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.magFilter = THREE.LinearFilter;
+        texture.minFilter = THREE.LinearFilter;
+        
+        const spriteMaterial = new THREE.SpriteMaterial({
+          map: texture,
+          sizeAttenuation: true,
+        });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(60, 60, 1);
+        sprite.position.set(x, y, z);
+        sprite.renderOrder = 1000;
+        
+        hotspotGroupRef.current?.add(sprite);
+        console.log('[ThreejsViewer] Arrow sprite added at', { x, y, z });
+      },
+      (progress) => {
+        console.log('[ThreejsViewer] Loading arrow:', progress.loaded / progress.total * 100 + '%');
+      },
+      (error) => {
+        console.error('[ThreejsViewer] Failed to load arrow from', arrowPath, error);
+        // Fallback: Create canvas arrow
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Draw a visible arrow
+          ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
+          ctx.beginPath();
+          ctx.arc(128, 128, 100, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.moveTo(128, 60);
+          ctx.lineTo(160, 120);
+          ctx.lineTo(130, 110);
+          ctx.lineTo(130, 180);
+          ctx.lineTo(126, 180);
+          ctx.lineTo(126, 110);
+          ctx.lineTo(96, 120);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fill();
+        }
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({
+          map: texture,
+          sizeAttenuation: true,
+        });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(60, 60, 1);
+        sprite.position.set(x, y, z);
+        sprite.renderOrder = 1000;
+        hotspotGroupRef.current?.add(sprite);
+        console.log('[ThreejsViewer] Canvas arrow added (fallback)');
+      }
+    );
 
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(size * 10, size * 10, 1);
-    sprite.position.set(x, y, z);
-
-    // Hit sphere
-    const hitGeometry = new THREE.SphereGeometry(size * 15, 16, 16);
+    // Hit sphere for clicking
+    const hitGeometry = new THREE.SphereGeometry(size * 20, 16, 16); // Larger hit area
     const hitMaterial = new THREE.MeshBasicMaterial({
       transparent: true,
       opacity: 0,
@@ -235,7 +281,6 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       text: opts?.text,
     };
 
-    hotspotGroupRef.current.add(sprite);
     hotspotGroupRef.current.add(hitSphere);
   };
 
@@ -290,7 +335,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!inputRef.current.isMouseDown) {
-        checkHotspotIntersection(e.clientX, e.clientY);
+        // Only check for hotspot hover, don't trigger click
         return;
       }
 
@@ -310,6 +355,11 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       canvas.style.cursor = 'grab';
     };
 
+    const handleClick = (e: MouseEvent) => {
+      // Only trigger hotspot on click, not on move
+      checkHotspotIntersection(e.clientX, e.clientY);
+    };
+
     const handleMouseLeave = () => {
       inputRef.current.isMouseDown = false;
       canvas.style.cursor = 'grab';
@@ -318,6 +368,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('click', handleClick);
     canvas.addEventListener('mouseleave', handleMouseLeave);
     canvas.style.cursor = 'grab';
     canvas.style.touchAction = 'none';
@@ -326,6 +377,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('click', handleClick);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, [scenes]);
@@ -467,6 +519,28 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       >
         ›
       </button>
+
+      {/* Scene Title Display */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 150,
+          background: 'rgba(0, 0, 0, 0.6)',
+          backdropFilter: 'blur(10px)',
+          padding: '10px 20px',
+          borderRadius: 8,
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 600,
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          pointerEvents: 'none',
+        }}
+      >
+        {currentTitle}
+      </div>
     </div>
   );
 }
