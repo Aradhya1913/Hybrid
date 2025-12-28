@@ -1,5 +1,5 @@
 # Hybrid Campus 360 Viewer
-
+ Thw working proper working one 
 > A hybrid panoramic viewer combining Three.js for smooth desktop navigation with A-Frame for immersive VR/Gyro experiences.
 
 ## Features
