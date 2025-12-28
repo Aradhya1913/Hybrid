@@ -44,27 +44,29 @@ export function ModeToggleUI() {
   return (
     <div
       style={{
-        position: 'absolute',
-        bottom: 20,
+        position: 'fixed',
+        top: 20,
         right: 20,
         zIndex: 300,
         display: 'flex',
         gap: 10,
         flexDirection: 'column',
         alignItems: 'flex-end',
+        maxWidth: 'calc(100vw - 40px)',
       }}
     >
       {/* Current Mode Indicator */}
       <div
         style={{
-          padding: '8px 12px',
-          borderRadius: 8,
+          padding: '6px 10px',
+          borderRadius: 6,
           background: 'rgba(0, 0, 0, 0.6)',
           color: '#fff',
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: 500,
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
+          textAlign: 'right',
         }}
       >
         {mode === 'normal' && '👁️ Normal Mode'}
@@ -77,17 +79,18 @@ export function ModeToggleUI() {
         <button
           onClick={handleVRClick}
           style={{
-            padding: '10px 14px',
-            borderRadius: 8,
+            padding: '8px 12px',
+            borderRadius: 6,
             background: mode === 'vr' ? 'rgba(239, 68, 68, 0.8)' : 'rgba(255, 255, 255, 0.1)',
             color: '#fff',
             border: '1px solid rgba(255, 255, 255, 0.2)',
             cursor: 'pointer',
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 500,
             backdropFilter: 'blur(10px)',
             transition: 'all 0.2s ease',
             pointerEvents: 'auto',
+            whiteSpace: 'nowrap',
           }}
           onMouseEnter={(e) => {
             const el = e.target as HTMLElement;
@@ -107,17 +110,18 @@ export function ModeToggleUI() {
         <button
           onClick={handleGyroClick}
           style={{
-            padding: '10px 14px',
-            borderRadius: 8,
+            padding: '8px 12px',
+            borderRadius: 6,
             background: mode === 'gyro' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)',
             color: '#fff',
             border: '1px solid rgba(255, 255, 255, 0.2)',
             cursor: 'pointer',
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 500,
             backdropFilter: 'blur(10px)',
             transition: 'all 0.2s ease',
             pointerEvents: 'auto',
+            whiteSpace: 'nowrap',
           }}
           onMouseEnter={(e) => {
             const el = e.target as HTMLElement;
@@ -136,13 +140,14 @@ export function ModeToggleUI() {
       {permissionDenied && (
         <div
           style={{
-            padding: '8px 12px',
-            borderRadius: 8,
+            padding: '6px 10px',
+            borderRadius: 6,
             background: 'rgba(239, 68, 68, 0.8)',
             color: '#fff',
-            fontSize: 11,
+            fontSize: 10,
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 100, 100, 0.3)',
+            textAlign: 'right',
           }}
         >
           ⚠️ Permission denied
