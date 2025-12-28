@@ -8,6 +8,10 @@ interface HotspotMesh extends THREE.Mesh {
     targetSceneId: string;
     isHotspot: boolean;
     text?: string;
+    sprite?: THREE.Sprite;
+    originalScale?: { x: number; y: number };
+    isHovered?: boolean;
+    animationTime?: number;
   };
 }
 
@@ -43,6 +47,12 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     lastTouchY: 0,
     touchVelocityX: 0,
     touchVelocityY: 0,
+  });
+
+  const animationRef = useRef({
+    time: 0,
+    deltaTime: 0,
+    lastTime: Date.now(),
   });
 
   // Initialize Three.js scene
@@ -102,6 +112,60 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     let animationId: number;
     const animate = () => {
       animationId = requestAnimationFrame(animate);
+
+      // Update animation time
+      const now = Date.now();
+      animationRef.current.deltaTime = (now - animationRef.current.lastTime) / 1000;
+      animationRef.current.lastTime = now;
+      animationRef.current.time += animationRef.current.deltaTime;
+
+      // Check for hotspot hover
+      if (cameraRef.current && rendererRef.current && hotspotGroupRef.current) {
+        const rect = rendererRef.current.domElement.getBoundingClientRect();
+        // Get current mouse position (using last known position)
+        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+        const intersects = raycasterRef.current.intersectObjects(hotspotGroupRef.current.children);
+        
+        // Reset all hotspots
+        for (const child of hotspotGroupRef.current.children) {
+          const mesh = child as HotspotMesh;
+          if (mesh.userData?.sprite && mesh.userData?.originalScale) {
+            mesh.userData.isHovered = false;
+            
+            // Add idle pulsing animation (subtle)
+            const pulse = 1 + Math.sin(animationRef.current.time * 3.0) * 0.04;
+            const originalScale = mesh.userData.originalScale;
+            mesh.userData.sprite.scale.set(
+              originalScale.x * pulse,
+              originalScale.y * pulse,
+              1
+            );
+            (mesh.userData.sprite.material as THREE.SpriteMaterial).opacity = 0.9 + Math.sin(animationRef.current.time * 2) * 0.1;
+          }
+        }
+        
+        // Highlight hovered hotspot
+        for (const intersection of intersects) {
+          const mesh = intersection.object as HotspotMesh;
+          if (mesh.userData?.isHotspot && mesh.userData?.sprite) {
+            mesh.userData.isHovered = true;
+            const originalScale = mesh.userData.originalScale!;
+            const hoverScale = {
+              x: originalScale.x * 1.4,
+              y: originalScale.y * 1.4,
+            };
+            mesh.userData.sprite.scale.lerp(new THREE.Vector3(hoverScale.x, hoverScale.y, 1), 0.2);
+            (mesh.userData.sprite.material as THREE.SpriteMaterial).opacity = 1;
+            rendererRef.current.domElement.style.cursor = 'pointer';
+            break;
+          }
+        }
+        
+        // Reset cursor if no hotspot hovered
+        if (intersects.length === 0) {
+          rendererRef.current.domElement.style.cursor = inputRef.current.isMouseDown ? 'grabbing' : 'grab';
+        }
+      }
 
       // Apply inertia
       if (inputRef.current.isTouching) {
@@ -199,73 +263,64 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const y = radius * Math.sin(pitch);
     const z = radius * Math.cos(pitch) * Math.cos(yaw);
 
-    // Load arrow.png texture with enhanced error handling
-    const arrowPath = window.location.origin + '/ui/arrow.png';
-    textureLoaderRef.current.load(
-      arrowPath,
-      (texture) => {
-        // Ensure proper color space
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.magFilter = THREE.LinearFilter;
-        texture.minFilter = THREE.LinearFilter;
-        
-        const spriteMaterial = new THREE.SpriteMaterial({
-          map: texture,
-          sizeAttenuation: true,
-        });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.scale.set(60, 60, 1);
-        sprite.position.set(x, y, z);
-        sprite.renderOrder = 1000;
-        
-        hotspotGroupRef.current?.add(sprite);
-        console.log('[ThreejsViewer] Arrow sprite added at', { x, y, z });
-      },
-      (progress) => {
-        console.log('[ThreejsViewer] Loading arrow:', progress.loaded / progress.total * 100 + '%');
-      },
-      (error) => {
-        console.error('[ThreejsViewer] Failed to load arrow from', arrowPath, error);
-        // Fallback: Create canvas arrow
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          // Draw a visible arrow
-          ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
-          ctx.beginPath();
-          ctx.arc(128, 128, 100, 0, Math.PI * 2);
-          ctx.fill();
+    // Load arrow.png texture with proper aspect ratio
+    const arrowPath = '/ui/arrow.png';
+    
+    // Load image to get dimensions
+    const img = new Image();
+    img.onload = () => {
+      textureLoaderRef.current.load(
+        arrowPath,
+        (texture) => {
+          // Ensure proper color space and filtering
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          texture.generateMipmaps = false;
           
-          ctx.strokeStyle = '#000';
-          ctx.lineWidth = 8;
-          ctx.beginPath();
-          ctx.moveTo(128, 60);
-          ctx.lineTo(160, 120);
-          ctx.lineTo(130, 110);
-          ctx.lineTo(130, 180);
-          ctx.lineTo(126, 180);
-          ctx.lineTo(126, 110);
-          ctx.lineTo(96, 120);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.fill();
+          const aspectRatio = img.width / img.height;
+          const baseSize = 70;
+          
+          const spriteMaterial = new THREE.SpriteMaterial({
+            map: texture,
+            sizeAttenuation: true,
+            transparent: true,
+            alphaTest: 0.01,
+            depthTest: false,
+            depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(spriteMaterial);
+          const originalScaleX = baseSize * aspectRatio;
+          const originalScaleY = baseSize;
+          sprite.scale.set(originalScaleX, originalScaleY, 1);
+          sprite.position.set(x, y, z);
+          sprite.renderOrder = 1000;
+          
+          hotspotGroupRef.current?.add(sprite);
+          
+          // Store sprite reference in the hit sphere for hover effects
+          if (hotspotGroupRef.current) {
+            for (const child of hotspotGroupRef.current.children) {
+              const mesh = child as HotspotMesh;
+              if (mesh.userData?.targetSceneId === targetSceneId && Math.abs(mesh.position.x - hitSphere.position.x) < 1 && Math.abs(mesh.position.y - hitSphere.position.y) < 1) {
+                mesh.userData.sprite = sprite;
+                mesh.userData.originalScale = { x: originalScaleX, y: originalScaleY };
+                mesh.userData.animationTime = 0;
+                break;
+              }
+            }
+          }
+          
+          console.log('[ThreejsViewer] Arrow sprite added with aspect ratio', aspectRatio);
+        },
+        undefined,
+        (error) => {
+          console.error('[ThreejsViewer] Failed to load arrow texture:', error);
         }
-        
-        const texture = new THREE.CanvasTexture(canvas);
-        const spriteMaterial = new THREE.SpriteMaterial({
-          map: texture,
-          sizeAttenuation: true,
-        });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.scale.set(60, 60, 1);
-        sprite.position.set(x, y, z);
-        sprite.renderOrder = 1000;
-        hotspotGroupRef.current?.add(sprite);
-        console.log('[ThreejsViewer] Canvas arrow added (fallback)');
-      }
-    );
+      );
+    };
+    img.onerror = () => console.error('[ThreejsViewer] Failed to load image for dimensions');
+    img.src = arrowPath;
 
     // Hit sphere for clicking
     const hitGeometry = new THREE.SphereGeometry(size * 20, 16, 16); // Larger hit area
@@ -302,6 +357,39 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         const targetSceneId = mesh.userData.targetSceneId;
         const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
         if (targetIdx >= 0) {
+          // Click feedback animation
+          if (mesh.userData?.sprite && mesh.userData?.originalScale) {
+            const sprite = mesh.userData.sprite;
+            const originalScale = mesh.userData.originalScale;
+            
+            // Pulse animation on click
+            const startScale = new THREE.Vector3(
+              originalScale.x * 1.3,
+              originalScale.y * 1.3,
+              1
+            );
+            sprite.scale.copy(startScale);
+            
+            // Animate back to original after click
+            let clickAnimationTime = 0;
+            const clickAnimationDuration = 300; // ms
+            const animateClick = () => {
+              clickAnimationTime += 16;
+              const progress = Math.min(clickAnimationTime / clickAnimationDuration, 1);
+              const easeOut = 1 - Math.pow(1 - progress, 3);
+              
+              sprite.scale.copy(originalScale).multiplyScalar(1 + (0.3 * (1 - easeOut)));
+              
+              if (progress < 1) {
+                requestAnimationFrame(animateClick);
+              }
+            };
+            animateClick();
+          }
+          
+          // Play click sound (optional - add later if needed)
+          // new Audio('/sounds/click.mp3').play().catch(() => {});
+          
           modeManager.setCurrentScene(targetIdx);
           return;
         }
@@ -334,6 +422,12 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (!rendererRef.current) return;
+      
+      const rect = rendererRef.current.domElement.getBoundingClientRect();
+      mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      
       if (!inputRef.current.isMouseDown) {
         // Only check for hotspot hover, don't trigger click
         return;

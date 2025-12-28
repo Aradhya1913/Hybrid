@@ -134,15 +134,23 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     hotspot.classList.add('clickable');
     hotspot.style.cursor = 'pointer';
 
-    // Handle click
+    // Handle click with feedback
     hotspot.addEventListener('click', () => {
+      // Click animation
+      const originalScale = '0.8 0.8 0.8';
+      const clickScale = '1.1 1.1 1.1';
+      hotspot.setAttribute('scale', clickScale);
+      setTimeout(() => {
+        hotspot.setAttribute('scale', originalScale);
+      }, 150);
+      
       const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
       if (targetIdx >= 0) {
         modeManager.setCurrentScene(targetIdx);
       }
     });
 
-    // Handle hover
+    // Handle hover with smooth transition
     hotspot.addEventListener('mouseenter', () => {
       hotspot.setAttribute('scale', '1 1 1');
     });
