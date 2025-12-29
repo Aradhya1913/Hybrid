@@ -6,8 +6,10 @@ export default defineConfig({
     allowedHosts: [
       'localhost',
       '127.0.0.1',
+      '.ngrok-free.dev',
       '.ngrok-free.app',
-      '.ngrok.io'
+      '.ngrok.io',
+      'micki-lyriform-irina.ngrok-free.dev'
     ]
   },
   build: {

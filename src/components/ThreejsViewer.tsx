@@ -351,12 +351,16 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     if (!hotspotGroupRef.current) return;
     const intersects = raycasterRef.current.intersectObjects(hotspotGroupRef.current.children);
 
+    console.log('[ThreejsViewer] Raycast check - intersections:', intersects.length);
+
     for (const intersection of intersects) {
       const mesh = intersection.object as HotspotMesh;
       if (mesh.userData?.isHotspot) {
         const targetSceneId = mesh.userData.targetSceneId;
+        console.log('[ThreejsViewer] Hit hotspot:', targetSceneId);
         const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
         if (targetIdx >= 0) {
+          console.log('[ThreejsViewer] Found scene index:', targetIdx);
           // Click feedback animation
           if (mesh.userData?.sprite && mesh.userData?.originalScale) {
             const sprite = mesh.userData.sprite;
@@ -387,9 +391,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
             animateClick();
           }
           
-          // Play click sound (optional - add later if needed)
-          // new Audio('/sounds/click.mp3').play().catch(() => {});
-          
+          console.log('[ThreejsViewer] Navigating to scene:', targetIdx);
           modeManager.setCurrentScene(targetIdx);
           return;
         }
@@ -451,7 +453,20 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleClick = (e: MouseEvent) => {
       // Only trigger hotspot on click, not on move
-      checkHotspotIntersection(e.clientX, e.clientY);
+      // Check if click is near center of screen (within ~100px radius)
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      const distance = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+      
+      console.log('[ThreejsViewer] Click event - distance from center:', distance);
+      
+      // Only allow clicks within ~150px of center to mimic the ring area
+      if (distance < 150) {
+        console.log('[ThreejsViewer] Click within center area, checking hotspots');
+        checkHotspotIntersection(e.clientX, e.clientY);
+      } else {
+        console.log('[ThreejsViewer] Click too far from center, ignoring');
+      }
     };
 
     const handleMouseLeave = () => {
@@ -481,8 +496,15 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const canvas = rendererRef.current?.domElement;
     if (!canvas) return;
 
+    let touchStartTime = 0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
+      touchStartTime = Date.now();
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
       inputRef.current.isTouching = true;
       inputRef.current.lastTouchX = e.touches[0].clientX;
       inputRef.current.lastTouchY = e.touches[0].clientY;
@@ -511,7 +533,35 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       inputRef.current.lastTouchY = currentY;
     };
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touchDuration = Date.now() - touchStartTime;
+      const touchDistance = Math.hypot(
+        e.changedTouches[0].clientX - touchStartX,
+        e.changedTouches[0].clientY - touchStartY
+      );
+
+      console.log('[ThreejsViewer] Touch end - duration:', touchDuration, 'distance:', touchDistance);
+
+      // If it's a quick tap (< 200ms) with minimal movement (< 10px), treat it as a click
+      if (touchDuration < 200 && touchDistance < 10) {
+        // Also check if tap is near center of screen (within ~150px)
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        const distanceFromCenter = Math.hypot(
+          e.changedTouches[0].clientX - centerX,
+          e.changedTouches[0].clientY - centerY
+        );
+        
+        console.log('[ThreejsViewer] Detected tap - distance from center:', distanceFromCenter);
+        
+        if (distanceFromCenter < 150) {
+          console.log('[ThreejsViewer] Detected tap click at center');
+          checkHotspotIntersection(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+        } else {
+          console.log('[ThreejsViewer] Tap too far from center, ignoring');
+        }
+      }
+
       inputRef.current.isTouching = false;
     };
 
@@ -530,7 +580,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       canvas.removeEventListener('touchend', handleTouchEnd);
       canvas.removeEventListener('touchcancel', handleTouchCancel);
     };
-  }, []);
+  }, [scenes]);
 
   return (
     <div
@@ -634,6 +684,40 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         }}
       >
         {currentTitle}
+      </div>
+
+      {/* Center Cursor Ring for Click Detection */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 100,
+          pointerEvents: 'none',
+          width: 60,
+          height: 60,
+          border: '3px solid rgba(255, 255, 255, 0)',
+          borderRadius: '50%',
+          boxShadow: 'inset 0 0 0 2px rgba(100, 200, 255, 0)',
+          opacity: 0,
+          visibility: 'hidden',
+        }}
+      >
+        {/* Inner dot */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 8,
+            height: 8,
+            backgroundColor: 'rgba(100, 200, 255, 0)',
+            borderRadius: '50%',
+            boxShadow: '0 0 10px rgba(100, 200, 255, 0)',
+          }}
+        />
       </div>
     </div>
   );

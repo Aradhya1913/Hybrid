@@ -39,8 +39,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           </a-assets>
           <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
           <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false">
-            <a-cursor id="cursor" fuse="true" fuseTimeout="500" raycaster="far: 10000; objects: .clickable"></a-cursor>
-            <a-entity raycaster="far: 10000; objects: .clickable" cursor></a-entity>
+            <a-cursor id="cursor" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
           </a-camera>
           <a-entity id="hotspots"></a-entity>
         </a-scene>
@@ -208,110 +207,116 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   };
 
   const setupMobileHotspotDetection = (aScene: any) => {
-    // For A-Frame, we need to detect when the cursor/reticle intersects a hotspot
-    // and trigger the click handler
+    console.log('[AframeViewer] Setting up hotspot detection');
     
     const cursor = aScene.querySelector('#cursor') as any;
-    const canvas = aScene.canvas;
     const hotspots = aScene.querySelectorAll('.clickable');
 
-    if (!cursor) {
-      console.warn('[AframeViewer] Cursor not found, trying manual raycast setup');
-    }
+    console.log('[AframeViewer] Found hotspots:', hotspots.length);
 
-    // Setup direct click handler on the canvas
-    const handleCanvasClick = () => {
-      console.log('[AframeViewer] Canvas clicked, checking hotspots');
-      
-      // Raycast from camera through center of screen
-      const raycaster = new THREE.Raycaster();
-      const camera = aScene.camera as THREE.Camera;
-      
-      if (!camera) return;
-      
-      // Center of screen
-      const mouse = new THREE.Vector2(0, 0);
-      raycaster.setFromCamera(mouse, camera);
-      
-      // Get all hotspot objects
-      const hotspotObjects: THREE.Object3D[] = [];
-      hotspots.forEach((h: any) => {
-        if (h.object3D) {
-          hotspotObjects.push(h.object3D);
-        }
-      });
-      
-      // Check for intersections
-      const intersects = raycaster.intersectObjects(hotspotObjects, true);
-      
-      if (intersects.length > 0) {
-        console.log('[AframeViewer] Hit hotspot:', intersects[0]);
-        
-        // Find the corresponding hotspot element and trigger click
-        hotspots.forEach((h: any) => {
-          if (h.object3D && intersects[0].object === h.object3D) {
-            h.click?.();
-            const clickEvent = new MouseEvent('click', { bubbles: true });
-            h.dispatchEvent(clickEvent);
-          }
-        });
-      }
-    };
+    // Setup event listeners on each hotspot
+    hotspots.forEach((hotspot: any, index: number) => {
+      const targetSceneId = hotspot.getAttribute('data-target-scene-id');
+      console.log(`[AframeViewer] Hotspot ${index}: ${targetSceneId}`);
 
-    // Listen for screen taps on mobile
-    if (canvas) {
-      canvas.addEventListener('click', handleCanvasClick);
-      canvas.addEventListener('touchend', (e: TouchEvent) => {
-        e.preventDefault();
-        handleCanvasClick();
-      }, { passive: false });
-    }
-
-    // Also setup raycaster-based events on each hotspot
-    hotspots.forEach((hotspot: any) => {
-      const handleClick = () => {
-        console.log('[AframeViewer] Hotspot raycaster click');
-        const targetSceneId = hotspot.getAttribute('data-target-scene-id');
-        if (!targetSceneId) return;
+      const handleHotspotClick = () => {
+        console.log('[AframeViewer] Hotspot clicked/fused:', targetSceneId);
         
         const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
         if (targetIdx >= 0) {
           // Click animation
-          const originalScale = hotspot.getAttribute('scale') || '0.8 0.8 0.8';
+          const originalScale = '0.8 0.8 0.8';
           const clickScale = '1.1 1.1 1.1';
           hotspot.setAttribute('scale', clickScale);
           setTimeout(() => {
             hotspot.setAttribute('scale', originalScale);
           }, 150);
+          
+          console.log('[AframeViewer] Navigating to scene:', targetIdx);
           modeManager.setCurrentScene(targetIdx);
         }
       };
 
-      // A-Frame raycaster events
+      // Listen for cursor-fuse event (gaze-based click in VR mode)
+      hotspot.addEventListener('fuse', () => {
+        console.log('[AframeViewer] Fuse event on hotspot');
+        handleHotspotClick();
+      });
+
+      // Raycaster intersection events for hover feedback
       hotspot.addEventListener('raycaster-intersected', () => {
-        console.log('[AframeViewer] Raycaster intersected hotspot');
+        console.log('[AframeViewer] Raycaster intersected');
         hotspot.setAttribute('scale', '1 1 1');
       });
 
       hotspot.addEventListener('raycaster-cleared', () => {
-        console.log('[AframeViewer] Raycaster cleared hotspot');
+        console.log('[AframeViewer] Raycaster cleared');
         hotspot.setAttribute('scale', '0.8 0.8 0.8');
       });
 
-      // Click events
-      hotspot.addEventListener('click', handleClick);
+      // Click events for desktop
+      hotspot.addEventListener('click', () => {
+        console.log('[AframeViewer] Click event on hotspot');
+        handleHotspotClick();
+      });
+
+      // Touch events for mobile non-VR
       hotspot.addEventListener('touchend', (e: TouchEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        handleClick();
+        console.log('[AframeViewer] Touchend event on hotspot');
+        handleHotspotClick();
       }, { passive: false });
-
-      // Cursor fuse (gaze-based click for VR)
-      hotspot.addEventListener('cursor-fuse', () => {
-        console.log('[AframeViewer] Cursor fuse on hotspot');
-        handleClick();
-      });
     });
+
+    // Setup canvas-level tap detection
+    const canvas = aScene.canvas;
+    if (canvas) {
+      const handleCanvasTap = () => {
+        console.log('[AframeViewer] Canvas tapped');
+        
+        // In VR mode, tapping anywhere with cursor on hotspot should click
+        // The cursor fuse will handle this, but we add this as fallback
+        const raycaster = new THREE.Raycaster();
+        const camera = aScene.camera as THREE.Camera;
+        
+        if (!camera) return;
+        
+        // Center of screen
+        const mouse = new THREE.Vector2(0, 0);
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Get all hotspot objects
+        const hotspotObjects: THREE.Object3D[] = [];
+        hotspots.forEach((h: any) => {
+          if (h.object3D) {
+            hotspotObjects.push(h.object3D);
+          }
+        });
+        
+        // Check for intersections
+        const intersects = raycaster.intersectObjects(hotspotObjects, true);
+        
+        if (intersects.length > 0) {
+          console.log('[AframeViewer] Canvas tap hit hotspot');
+          
+          // Find the corresponding hotspot element
+          hotspots.forEach((h: any) => {
+            if (h.object3D && intersects[0].object.parent?.parent?.userData?.aframeEntity === h) {
+              console.log('[AframeViewer] Triggering hotspot click from canvas tap');
+              h.click?.();
+            }
+          });
+        }
+      };
+
+      // Listen for screen taps
+      canvas.addEventListener('click', handleCanvasTap);
+      canvas.addEventListener('touchend', (e: TouchEvent) => {
+        e.preventDefault();
+        handleCanvasTap();
+      }, { passive: false });
+    }
   };
 
   const setupDeviceOrientation = (camera: any) => {
