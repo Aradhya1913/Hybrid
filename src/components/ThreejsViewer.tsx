@@ -452,21 +452,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const handleClick = (e: MouseEvent) => {
-      // Only trigger hotspot on click, not on move
-      // Check if click is near center of screen (within ~100px radius)
-      const centerX = window.innerWidth / 2;
-      const centerY = window.innerHeight / 2;
-      const distance = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-      
-      console.log('[ThreejsViewer] Click event - distance from center:', distance);
-      
-      // Only allow clicks within ~150px of center to mimic the ring area
-      if (distance < 150) {
-        console.log('[ThreejsViewer] Click within center area, checking hotspots');
-        checkHotspotIntersection(e.clientX, e.clientY);
-      } else {
-        console.log('[ThreejsViewer] Click too far from center, ignoring');
-      }
+      // Trigger hotspot clicks from anywhere on screen
+      console.log('[ThreejsViewer] Click event detected at', e.clientX, e.clientY);
+      checkHotspotIntersection(e.clientX, e.clientY);
     };
 
     const handleMouseLeave = () => {
@@ -544,22 +532,8 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
       // If it's a quick tap (< 200ms) with minimal movement (< 10px), treat it as a click
       if (touchDuration < 200 && touchDistance < 10) {
-        // Also check if tap is near center of screen (within ~150px)
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        const distanceFromCenter = Math.hypot(
-          e.changedTouches[0].clientX - centerX,
-          e.changedTouches[0].clientY - centerY
-        );
-        
-        console.log('[ThreejsViewer] Detected tap - distance from center:', distanceFromCenter);
-        
-        if (distanceFromCenter < 150) {
-          console.log('[ThreejsViewer] Detected tap click at center');
-          checkHotspotIntersection(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-        } else {
-          console.log('[ThreejsViewer] Tap too far from center, ignoring');
-        }
+        console.log('[ThreejsViewer] Detected tap click from anywhere on screen');
+        checkHotspotIntersection(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       }
 
       inputRef.current.isTouching = false;
