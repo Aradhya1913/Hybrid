@@ -31,19 +31,40 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       if (!containerRef.current) return;
 
       const scene = scenes[modeManager.currentSceneIndex];
-      containerRef.current.innerHTML = `
-        <a-scene embedded inspector="url: https://aframe.io/releases/latest/aframe-inspector.js">
-          <a-assets>
-            <img id="panorama" src="${scene?.url || ''}" />
-            <img id="arrow-icon" src="/ui/arrow.png" />
-          </a-assets>
-          <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
-          <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false">
-            <a-cursor id="cursor" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
-          </a-camera>
-          <a-entity id="hotspots"></a-entity>
-        </a-scene>
-      `;
+      const isVRMode = modeManager.mode === 'vr';
+      
+      // For VR mode, use stereoscopic split-screen; for Gyro, use normal view
+      if (isVRMode) {
+        // VR split-screen stereo view (YouTube VR style)
+        containerRef.current.innerHTML = `
+          <a-scene embedded embedded-vr inspector="url: https://aframe.io/releases/latest/aframe-inspector.js" vr-mode-ui="enabled: false">
+            <a-assets>
+              <img id="panorama" src="${scene?.url || ''}" />
+              <img id="arrow-icon" src="/ui/arrow.png" />
+            </a-assets>
+            <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
+            <a-camera id="camera" position="0 0 0" look-controls="enabled: true" wasd-controls="enabled: false" camera="active: true; far: 10000; fov: 80">
+              <a-cursor id="cursor" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
+            </a-camera>
+            <a-entity id="hotspots"></a-entity>
+          </a-scene>
+        `;
+      } else {
+        // Gyro mode - normal single view
+        containerRef.current.innerHTML = `
+          <a-scene embedded inspector="url: https://aframe.io/releases/latest/aframe-inspector.js">
+            <a-assets>
+              <img id="panorama" src="${scene?.url || ''}" />
+              <img id="arrow-icon" src="/ui/arrow.png" />
+            </a-assets>
+            <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
+            <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false">
+              <a-cursor id="cursor" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
+            </a-camera>
+            <a-entity id="hotspots"></a-entity>
+          </a-scene>
+        `;
+      }
 
       // Get the scene element and ensure it's ready
       const aScene = containerRef.current.querySelector('a-scene') as any;
@@ -352,72 +373,108 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   };
 
   const enableCardboardStereo = (aScene: any, camera: any) => {
-    console.log('[AframeViewer] Enabling Cardboard stereo rendering');
-    const renderer = aScene.renderer as THREE.WebGLRenderer;
+    console.log('[AframeViewer] Enabling Cardboard stereo rendering for VR mode');
     
-    if (!renderer || !camera) return;
+    if (!aScene || !aScene.renderer) return;
 
-    // Enable device orientation for gyro head tracking in VR
-    if (typeof DeviceOrientationEvent !== 'undefined') {
-      if ((DeviceOrientationEvent as any).requestPermission) {
-        (DeviceOrientationEvent as any)
-          .requestPermission()
-          .then((permission: string) => {
-            if (permission === 'granted') {
-              console.log('[VR] Permission granted, enabling gyro');
-              window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
-                const alpha = e.alpha || 0;
-                const beta = e.beta || 0;
-                const radBeta = (beta * Math.PI) / 180;
-                const radAlpha = (alpha * Math.PI) / 180;
-                const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
+    const renderer = aScene.renderer as THREE.WebGLRenderer;
+    const canvas = renderer.domElement;
 
-                camera.setAttribute('rotation', {
-                  x: THREE.MathUtils.radToDeg(clampedBeta),
-                  y: THREE.MathUtils.radToDeg(radAlpha),
-                  z: 0,
-                });
-              });
-            }
-          })
-          .catch((err: any) => console.log('[VR] Permission denied:', err));
-      } else {
-        // Non-iOS
-        console.log('[VR] Non-iOS device, enabling gyro');
-        window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
-          const alpha = e.alpha || 0;
-          const beta = e.beta || 0;
-          const radBeta = (beta * Math.PI) / 180;
-          const radAlpha = (alpha * Math.PI) / 180;
-          const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
-
-          camera.setAttribute('rotation', {
-            x: THREE.MathUtils.radToDeg(clampedBeta),
-            y: THREE.MathUtils.radToDeg(radAlpha),
-            z: 0,
-          });
-        });
+    // Apply split-screen stereo CSS
+    const style = document.createElement('style');
+    style.id = 'vr-stereo-style';
+    style.textContent = `
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
       }
+      
+      a-scene {
+        width: 100vw !important;
+        height: 100vh !important;
+      }
+      
+      canvas {
+        width: 100vw !important;
+        height: 100vh !important;
+        display: block !important;
+      }
+    `;
+    
+    // Remove existing style if present
+    const existingStyle = document.getElementById('vr-stereo-style');
+    if (existingStyle) {
+      existingStyle.remove();
     }
+    document.head.appendChild(style);
 
-    // Load Cardboard effect script for split-screen stereo
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/cardboard-vr-display@1.0.0/build/cardboard-vr-display.min.js';
-    script.async = true;
-    document.head.appendChild(script);
-
-    script.onload = () => {
-      console.log('[VR] Cardboard loaded, applying stereo');
-      // Request fullscreen for better VR experience
+    // Enable stereo effect using Three.js
+    setTimeout(() => {
       try {
-        const elem = (aScene.canvas || document.documentElement) as any;
-        elem.requestFullscreen?.() || 
-        elem.webkitRequestFullscreen?.() ||
-        elem.mozRequestFullScreen?.();
-      } catch (e) {
-        console.log('[VR] Fullscreen not available');
+        // Get THREE library from A-Frame
+        const THREE = (window as any).THREE;
+        if (!THREE) return;
+
+        // Create stereo effect for split-screen rendering
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        
+        // Store original render function
+        const originalRender = renderer.render.bind(renderer);
+        
+        // Override render to draw split-screen
+        let frameCount = 0;
+        renderer.render = function(scene: any, cam: any) {
+          frameCount++;
+          
+          // Render left eye
+          renderer.setViewport(0, 0, width / 2, height);
+          renderer.setScissor(0, 0, width / 2, height);
+          renderer.setScissorTest(true);
+          cam.position.x = -0.032; // IPD offset for left eye
+          originalRender(scene, cam);
+          
+          // Render right eye
+          renderer.setViewport(width / 2, 0, width / 2, height);
+          renderer.setScissor(width / 2, 0, width / 2, height);
+          renderer.setScissorTest(true);
+          cam.position.x = 0.032; // IPD offset for right eye
+          originalRender(scene, cam);
+          
+          // Reset
+          cam.position.x = 0;
+          renderer.setScissorTest(false);
+          renderer.setViewport(0, 0, width, height);
+        };
+
+        console.log('[AframeViewer] Stereo effect enabled');
+
+        // Handle window resize
+        const handleResize = () => {
+          const newWidth = window.innerWidth;
+          const newHeight = window.innerHeight;
+          renderer.setSize(newWidth, newHeight);
+        };
+        window.addEventListener('resize', handleResize);
+
+        // Request fullscreen
+        try {
+          const elem = canvas as any;
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen().catch(() => {});
+          } else if (elem.webkitRequestFullscreen) {
+            elem.webkitRequestFullscreen();
+          } else if (elem.mozRequestFullScreen) {
+            elem.mozRequestFullScreen();
+          }
+        } catch (e) {
+          console.log('[VR] Fullscreen not available');
+        }
+      } catch (error) {
+        console.error('[AframeViewer] Error enabling stereo:', error);
       }
-    };
+    }, 500);
   };
 
   return (
