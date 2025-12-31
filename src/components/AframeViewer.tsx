@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useModeManager } from './ModeManager';
 import { SceneDef } from '../data/scenes';
@@ -7,6 +7,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modeManager = useModeManager();
   const sceneRef = useRef<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -26,6 +27,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const setupScene = async () => {
+      setIsLoading(true);
       await initAFrame();
 
       if (!containerRef.current) return;
@@ -97,8 +99,10 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       }
 
       // Setup mobile click detection for A-Frame hotspots
-      // A-Frame uses a raycaster with a reticle for mobile VR/Gyro interactions
       setupMobileHotspotDetection(aScene);
+      
+      // Scene is now fully loaded
+      setTimeout(() => setIsLoading(false), 300);
     };
 
     setupScene();
@@ -166,6 +170,12 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleHotspotClick = () => {
       console.log('[AframeViewer] Hotspot clicked, target:', targetSceneId);
+      
+      // Haptic feedback on click
+      if (navigator.vibrate) {
+        navigator.vibrate(100); // 100ms vibration
+      }
+      
       // Click animation
       const originalScale = '0.8 0.8 0.8';
       const clickScale = '1.1 1.1 1.1';
@@ -242,6 +252,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
       const handleHotspotClick = () => {
         console.log('[AframeViewer] Hotspot clicked/fused:', targetSceneId);
+        
+        // Haptic feedback on click
+        if (navigator.vibrate) {
+          navigator.vibrate(100); // 100ms vibration
+        }
         
         const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
         if (targetIdx >= 0) {
@@ -485,6 +500,118 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         height: '100%',
         position: 'relative',
       }}
-    />
+    >
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 20,
+          }}
+        >
+          {/* Spinner */}
+          <div
+            style={{
+              width: 60,
+              height: 60,
+              border: '4px solid rgba(255, 255, 255, 0.3)',
+              borderTop: '4px solid rgba(100, 200, 255, 1)',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }}
+          />
+          
+          {/* Loading Text */}
+          <div
+            style={{
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: 500,
+              textAlign: 'center',
+              background: 'rgba(0, 0, 0, 0.7)',
+              padding: '10px 20px',
+              borderRadius: 8,
+              backdropFilter: 'blur(10px)',
+            }}
+          >
+            Loading scene...
+          </div>
+        </div>
+      )}
+      
+      {/* Fullscreen Button */}
+      <button
+        onClick={() => {
+          const elem = containerRef.current || document.documentElement;
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+          } else if ((elem as any).webkitRequestFullscreen) {
+            (elem as any).webkitRequestFullscreen();
+          } else if ((elem as any).mozRequestFullScreen) {
+            (elem as any).mozRequestFullScreen();
+          } else if ((elem as any).msRequestFullscreen) {
+            (elem as any).msRequestFullscreen();
+          }
+          
+          // Haptic feedback
+          if (navigator.vibrate) {
+            navigator.vibrate(50);
+          }
+        }}
+        style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          zIndex: 200,
+          width: 48,
+          height: 48,
+          borderRadius: 12,
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          cursor: 'pointer',
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.2s ease',
+          pointerEvents: 'auto',
+        }}
+        onMouseEnter={(e) => {
+          const el = e.target as HTMLElement;
+          el.style.background = 'rgba(255, 255, 255, 0.15)';
+          el.style.transform = 'scale(1.05)';
+        }}
+        onMouseLeave={(e) => {
+          const el = e.target as HTMLElement;
+          el.style.background = 'rgba(255, 255, 255, 0.1)';
+          el.style.transform = 'scale(1)';
+        }}
+      >
+        <img
+          src="/ui/fullscreen.png"
+          alt="Fullscreen"
+          style={{
+            width: '60%',
+            height: '60%',
+            objectFit: 'contain',
+          }}
+        />
+      </button>
+      
+      {/* CSS Animation */}
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
   );
 }
