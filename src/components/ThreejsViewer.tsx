@@ -207,7 +207,34 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const scene = scenes[index];
     setCurrentTitle(scene.title);
 
-    // Load texture
+    // Clear hotspots immediately when transitioning
+    clearHotspots();
+
+    // Show fade overlay for transition
+    let fadeOverlay = document.getElementById('fade-overlay-threejs');
+    if (!fadeOverlay) {
+      fadeOverlay = document.createElement('div');
+      fadeOverlay.id = 'fade-overlay-threejs';
+      fadeOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 998;
+        opacity: 0;
+        transition: opacity 0.5s ease-in-out;
+        pointer-events: none;
+      `;
+      document.body.appendChild(fadeOverlay);
+    }
+
+    // Fade in
+    fadeOverlay.style.opacity = '1';
+    fadeOverlay.style.pointerEvents = 'auto';
+
+    // Load texture with fade out after load
     textureLoaderRef.current.load(
       scene.url,
       (texture) => {
@@ -215,27 +242,35 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         if (sphereRef.current && sphereRef.current.material instanceof THREE.MeshBasicMaterial) {
           sphereRef.current.material.map = texture;
           sphereRef.current.material.needsUpdate = true;
+          
+          // Add hotspots AFTER texture is loaded
+          if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
+            scene.hotSpots.forEach((hotspot) => {
+              addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
+                size: 0.7,
+                text: hotspot.text,
+              });
+            });
+          } else {
+            const nextIdx = (index + 1) % scenes.length;
+            addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
+          }
+          
+          // Fade out overlay after texture loads and hotspots are added
+          setTimeout(() => {
+            fadeOverlay.style.opacity = '0';
+            fadeOverlay.style.pointerEvents = 'none';
+          }, 300);
         }
       },
       undefined,
       (error) => {
         console.error('[ThreejsViewer] Failed to load:', scene.url, error);
+        // Fade out on error too
+        fadeOverlay.style.opacity = '0';
+        fadeOverlay.style.pointerEvents = 'none';
       }
     );
-
-    // Hotspots
-    clearHotspots();
-    if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
-      scene.hotSpots.forEach((hotspot) => {
-        addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
-          size: 0.7,
-          text: hotspot.text,
-        });
-      });
-    } else {
-      const nextIdx = (index + 1) % scenes.length;
-      addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
-    }
   };
 
   const clearHotspots = () => {

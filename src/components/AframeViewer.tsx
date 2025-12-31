@@ -7,7 +7,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modeManager = useModeManager();
   const sceneRef = useRef<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -27,10 +27,36 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const setupScene = async () => {
-      setIsLoading(true);
       await initAFrame();
 
       if (!containerRef.current) return;
+
+      // Get or create fade overlay outside the container
+      let fadeOverlay = document.getElementById('fade-overlay-gyro');
+      if (!fadeOverlay) {
+        fadeOverlay = document.createElement('div');
+        fadeOverlay.id = 'fade-overlay-gyro';
+        fadeOverlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 998;
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out;
+          pointer-events: none;
+        `;
+        document.body.appendChild(fadeOverlay);
+      }
+
+      // Show fade overlay
+      fadeOverlay.style.opacity = '1';
+      fadeOverlay.style.pointerEvents = 'auto';
+
+      // Wait for fade effect
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       const scene = scenes[modeManager.currentSceneIndex];
       const isVRMode = modeManager.mode === 'vr';
@@ -86,23 +112,89 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       const camera = aScene.querySelector('#camera') as any;
       if (!camera) return;
 
-      // Add hotspots
-      addHotspots(aScene);
+      // Show loading indicator
+      setIsLoading(true);
+      console.log('[AframeViewer] Starting to load scene panorama');
 
-      // Determine if we're in gyro or VR mode
-      const isGyroMode = modeManager.mode === 'gyro';
+      // Wait for panorama image to fully load before showing hotspots
+      const panoramaImg = aScene.querySelector('#panorama') as any;
+      const sky = aScene.querySelector('#app-sky') as any;
 
-      if (isGyroMode) {
-        enableGyroMode(camera, aScene);
-      } else if (modeManager.mode === 'vr') {
-        enableVRMode(aScene, camera);
+      if (panoramaImg && sky) {
+        // Monitor image load
+        const checkImageLoaded = () => {
+          if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
+            console.log('[AframeViewer] Panorama image loaded successfully');
+            
+            // Add sky fade-in animation
+            sky.setAttribute('animation', 'property: opacity; from: 0.5; to: 1; dur: 800; easing: easeInOutQuad');
+            
+            // Add slight camera rotation transition for immersion
+            camera.setAttribute('animation', 'property: rotation; from: 0 0 0; to: 0 0 0; dur: 300; easing: easeOutQuad');
+            
+            // Image is loaded, now add hotspots
+            addHotspots(aScene);
+            setIsLoading(false);
+
+            // Fade out the overlay
+            const fadeOverlay = document.getElementById('fade-overlay-gyro');
+            if (fadeOverlay) {
+              fadeOverlay.style.opacity = '0';
+              fadeOverlay.style.pointerEvents = 'none';
+            }
+
+            // Determine if we're in gyro or VR mode
+            const isGyroMode = modeManager.mode === 'gyro';
+
+            if (isGyroMode) {
+              enableGyroMode(camera, aScene);
+            } else if (modeManager.mode === 'vr') {
+              enableVRMode(aScene, camera);
+            }
+
+            // Setup mobile click detection
+            setupMobileHotspotDetection(aScene);
+          } else {
+            // Still loading, check again
+            setTimeout(checkImageLoaded, 100);
+          }
+        };
+
+        // Start checking if image is loaded
+        if (panoramaImg.complete) {
+          checkImageLoaded();
+        } else {
+          panoramaImg.onload = checkImageLoaded;
+          panoramaImg.onerror = () => {
+            console.error('[AframeViewer] Failed to load panorama image');
+            setIsLoading(false);
+            const fadeOverlay = document.getElementById('fade-overlay-gyro');
+            if (fadeOverlay) {
+              fadeOverlay.style.opacity = '0';
+              fadeOverlay.style.pointerEvents = 'none';
+            }
+          };
+        }
+      } else {
+        // Fallback if elements not found
+        addHotspots(aScene);
+        setIsLoading(false);
+
+        const fadeOverlay = document.getElementById('fade-overlay-gyro');
+        if (fadeOverlay) {
+          fadeOverlay.style.opacity = '0';
+          fadeOverlay.style.pointerEvents = 'none';
+        }
+
+        const isGyroMode = modeManager.mode === 'gyro';
+        if (isGyroMode) {
+          enableGyroMode(camera, aScene);
+        } else if (modeManager.mode === 'vr') {
+          enableVRMode(aScene, camera);
+        }
+
+        setupMobileHotspotDetection(aScene);
       }
-
-      // Setup mobile click detection for A-Frame hotspots
-      setupMobileHotspotDetection(aScene);
-      
-      // Scene is now fully loaded
-      setTimeout(() => setIsLoading(false), 300);
     };
 
     setupScene();
@@ -170,12 +262,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleHotspotClick = () => {
       console.log('[AframeViewer] Hotspot clicked, target:', targetSceneId);
-      
-      // Haptic feedback on click
-      if (navigator.vibrate) {
-        navigator.vibrate(100); // 100ms vibration
-      }
-      
       // Click animation
       const originalScale = '0.8 0.8 0.8';
       const clickScale = '1.1 1.1 1.1';
@@ -252,11 +338,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
       const handleHotspotClick = () => {
         console.log('[AframeViewer] Hotspot clicked/fused:', targetSceneId);
-        
-        // Haptic feedback on click
-        if (navigator.vibrate) {
-          navigator.vibrate(100); // 100ms vibration
-        }
         
         const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
         if (targetIdx >= 0) {
@@ -501,19 +582,23 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         position: 'relative',
       }}
     >
-      {/* Loading Indicator */}
+      {/* Loading Overlay */}
       {isLoading && (
         <div
           style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 1000,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: 20,
+            justifyContent: 'center',
+            zIndex: 999,
+            backdropFilter: 'blur(5px)',
+            pointerEvents: 'auto',
           }}
         >
           {/* Spinner */}
@@ -521,97 +606,41 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             style={{
               width: 60,
               height: 60,
-              border: '4px solid rgba(255, 255, 255, 0.3)',
-              borderTop: '4px solid rgba(100, 200, 255, 1)',
+              border: '4px solid rgba(255, 255, 255, 0.2)',
+              borderTop: '4px solid rgba(100, 200, 255, 0.8)',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite',
+              marginBottom: 16,
             }}
           />
-          
-          {/* Loading Text */}
           <div
             style={{
               color: '#fff',
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: 500,
               textAlign: 'center',
-              background: 'rgba(0, 0, 0, 0.7)',
-              padding: '10px 20px',
-              borderRadius: 8,
-              backdropFilter: 'blur(10px)',
             }}
           >
-            Loading scene...
+            Loading Scene...
           </div>
+          <div
+            style={{
+              color: 'rgba(255, 255, 255, 0.6)',
+              fontSize: 12,
+              marginTop: 8,
+            }}
+          >
+            Please wait
+          </div>
+
+          {/* CSS Animation */}
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
         </div>
       )}
-      
-      {/* Fullscreen Button */}
-      <button
-        onClick={() => {
-          const elem = containerRef.current || document.documentElement;
-          if (elem.requestFullscreen) {
-            elem.requestFullscreen();
-          } else if ((elem as any).webkitRequestFullscreen) {
-            (elem as any).webkitRequestFullscreen();
-          } else if ((elem as any).mozRequestFullScreen) {
-            (elem as any).mozRequestFullScreen();
-          } else if ((elem as any).msRequestFullscreen) {
-            (elem as any).msRequestFullscreen();
-          }
-          
-          // Haptic feedback
-          if (navigator.vibrate) {
-            navigator.vibrate(50);
-          }
-        }}
-        style={{
-          position: 'fixed',
-          bottom: 20,
-          right: 20,
-          zIndex: 200,
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          cursor: 'pointer',
-          padding: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s ease',
-          pointerEvents: 'auto',
-        }}
-        onMouseEnter={(e) => {
-          const el = e.target as HTMLElement;
-          el.style.background = 'rgba(255, 255, 255, 0.15)';
-          el.style.transform = 'scale(1.05)';
-        }}
-        onMouseLeave={(e) => {
-          const el = e.target as HTMLElement;
-          el.style.background = 'rgba(255, 255, 255, 0.1)';
-          el.style.transform = 'scale(1)';
-        }}
-      >
-        <img
-          src="/ui/fullscreen.png"
-          alt="Fullscreen"
-          style={{
-            width: '60%',
-            height: '60%',
-            objectFit: 'contain',
-          }}
-        />
-      </button>
-      
-      {/* CSS Animation */}
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
