@@ -121,8 +121,14 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       const sky = aScene.querySelector('#app-sky') as any;
 
       if (panoramaImg && sky) {
-        // Monitor image load
+        // Monitor image load with better detection
+        let imageLoadAttempts = 0;
+        const maxAttempts = 50; // 5 seconds max wait
+        
         const checkImageLoaded = () => {
+          imageLoadAttempts++;
+          console.log(`[AframeViewer] Checking image load attempt ${imageLoadAttempts}, complete: ${panoramaImg.complete}, naturalHeight: ${panoramaImg.naturalHeight}`);
+          
           if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
             console.log('[AframeViewer] Panorama image loaded successfully');
             
@@ -132,51 +138,85 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             // Add slight camera rotation transition for immersion
             camera.setAttribute('animation', 'property: rotation; from: 0 0 0; to: 0 0 0; dur: 300; easing: easeOutQuad');
             
-            // Image is loaded, now add hotspots
+            // Wait a bit more to ensure sky texture is applied
+            setTimeout(() => {
+              console.log('[AframeViewer] Adding hotspots after texture applied');
+              // Image is loaded, now add hotspots
+              addHotspots(aScene);
+              setIsLoading(false);
+
+              // Fade out the overlay
+              const fadeOverlay = document.getElementById('fade-overlay-gyro');
+              if (fadeOverlay) {
+                fadeOverlay.style.opacity = '0';
+                fadeOverlay.style.pointerEvents = 'none';
+              }
+
+              // Determine if we're in gyro or VR mode
+              const isGyroMode = modeManager.mode === 'gyro';
+
+              if (isGyroMode) {
+                enableGyroMode(camera, aScene);
+              } else if (modeManager.mode === 'vr') {
+                enableVRMode(aScene, camera);
+              }
+
+              // Setup mobile click detection after hotspots are added
+              setTimeout(() => {
+                setupMobileHotspotDetection(aScene);
+              }, 200);
+            }, 400);
+          } else if (imageLoadAttempts < maxAttempts) {
+            // Still loading, check again
+            setTimeout(checkImageLoaded, 100);
+          } else {
+            // Timeout - force add hotspots anyway
+            console.warn('[AframeViewer] Image load timeout, adding hotspots anyway');
             addHotspots(aScene);
             setIsLoading(false);
 
-            // Fade out the overlay
             const fadeOverlay = document.getElementById('fade-overlay-gyro');
             if (fadeOverlay) {
               fadeOverlay.style.opacity = '0';
               fadeOverlay.style.pointerEvents = 'none';
             }
 
-            // Determine if we're in gyro or VR mode
             const isGyroMode = modeManager.mode === 'gyro';
-
             if (isGyroMode) {
               enableGyroMode(camera, aScene);
             } else if (modeManager.mode === 'vr') {
               enableVRMode(aScene, camera);
             }
 
-            // Setup mobile click detection
-            setupMobileHotspotDetection(aScene);
-          } else {
-            // Still loading, check again
-            setTimeout(checkImageLoaded, 100);
+            setTimeout(() => {
+              setupMobileHotspotDetection(aScene);
+            }, 200);
           }
         };
 
-        // Start checking if image is loaded
-        if (panoramaImg.complete) {
-          checkImageLoaded();
-        } else {
-          panoramaImg.onload = checkImageLoaded;
-          panoramaImg.onerror = () => {
-            console.error('[AframeViewer] Failed to load panorama image');
-            setIsLoading(false);
-            const fadeOverlay = document.getElementById('fade-overlay-gyro');
-            if (fadeOverlay) {
-              fadeOverlay.style.opacity = '0';
-              fadeOverlay.style.pointerEvents = 'none';
-            }
-          };
-        }
+        // Start checking if image is loaded (add small delay to let A-Frame initialize)
+        setTimeout(() => {
+          if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
+            console.log('[AframeViewer] Image already cached/loaded');
+            checkImageLoaded();
+          } else {
+            panoramaImg.onload = checkImageLoaded;
+            panoramaImg.onerror = () => {
+              console.error('[AframeViewer] Failed to load panorama image');
+              setIsLoading(false);
+              const fadeOverlay = document.getElementById('fade-overlay-gyro');
+              if (fadeOverlay) {
+                fadeOverlay.style.opacity = '0';
+                fadeOverlay.style.pointerEvents = 'none';
+              }
+            };
+            // Also start polling in case onload doesn't fire
+            setTimeout(checkImageLoaded, 100);
+          }
+        }, 100);
       } else {
         // Fallback if elements not found
+        console.warn('[AframeViewer] Panorama or sky element not found, adding hotspots anyway');
         addHotspots(aScene);
         setIsLoading(false);
 
@@ -193,7 +233,9 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           enableVRMode(aScene, camera);
         }
 
-        setupMobileHotspotDetection(aScene);
+        setTimeout(() => {
+          setupMobileHotspotDetection(aScene);
+        }, 200);
       }
     };
 
