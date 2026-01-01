@@ -31,32 +31,25 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
       if (!containerRef.current) return;
 
-      // Get or create fade overlay outside the container
-      let fadeOverlay = document.getElementById('fade-overlay-gyro');
+      // Create fade overlay for smooth transitions
+      let fadeOverlay = document.getElementById('gyro-fade-transition');
       if (!fadeOverlay) {
         fadeOverlay = document.createElement('div');
-        fadeOverlay.id = 'fade-overlay-gyro';
+        fadeOverlay.id = 'gyro-fade-transition';
         fadeOverlay.style.cssText = `
           position: fixed;
           top: 0;
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.7);
-          z-index: 998;
+          background: #000000;
+          z-index: 997;
           opacity: 0;
-          transition: opacity 0.5s ease-in-out;
+          transition: opacity 0.6s ease-in-out;
           pointer-events: none;
         `;
         document.body.appendChild(fadeOverlay);
       }
-
-      // Show fade overlay
-      fadeOverlay.style.opacity = '1';
-      fadeOverlay.style.pointerEvents = 'auto';
-
-      // Wait for fade effect
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       const scene = scenes[modeManager.currentSceneIndex];
       const isVRMode = modeManager.mode === 'vr';
@@ -115,32 +108,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       const currentScene = scenes[modeManager.currentSceneIndex];
       console.log(`[AframeViewer] 🎬 Scene loaded callback for: ${currentScene?.id}`);
 
-      // Show loading indicator
-      setIsLoading(true);
-      console.log('[AframeViewer] Starting to load scene panorama');
-
-      // Show fade overlay immediately and disable pointer events so raycaster works
-      let fadeOverlay = document.getElementById('fade-overlay-gyro');
-      if (!fadeOverlay) {
-        fadeOverlay = document.createElement('div');
-        fadeOverlay.id = 'fade-overlay-gyro';
-        fadeOverlay.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.7);
-          z-index: 998;
-          opacity: 0;
-          transition: opacity 0.5s ease-in-out;
-          pointer-events: none;
-        `;
-        document.body.appendChild(fadeOverlay);
+      // Show loading indicator (but not for A-Frame Gyro - instant transitions)
+      const isGyroMode = modeManager.mode === 'gyro';
+      // Never set isLoading for Gyro mode - keep it false
+      if (!isGyroMode) {
+        setIsLoading(true);
       }
-
-      fadeOverlay.style.opacity = '1';
-      fadeOverlay.style.pointerEvents = 'none'; // CRITICAL: Don't block raycaster
+      console.log('[AframeViewer] Starting to load scene panorama');
 
       // Wait for panorama image to fully load before showing hotspots
       const panoramaImg = aScene.querySelector('#panorama') as any;
@@ -165,8 +139,8 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
             console.log(`[AframeViewer] ✅ Image loaded after ${imageLoadAttempts} attempts`);
             
-            // Add sky fade-in animation
-            sky.setAttribute('animation', 'property: opacity; from: 0.5; to: 1; dur: 800; easing: easeInOutQuad');
+            // Set sky to fully opaque immediately - no fade animation to avoid blue flash
+            sky.setAttribute('opacity', '1');
             
             // Add slight camera rotation transition for immersion
             camera.setAttribute('animation', 'property: rotation; from: 0 0 0; to: 0 0 0; dur: 300; easing: easeOutQuad');
@@ -176,17 +150,20 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
               console.log(`[AframeViewer] 🔧 Adding hotspots for ${currentScene?.id} (${currentScene?.hotSpots?.length || 0} hotspots)`);
               // Image is loaded, now add hotspots
               addHotspots(aScene);
-              setIsLoading(false);
-
-              // Fade out the overlay
-              if (fadeOverlay) {
-                fadeOverlay.style.opacity = '0';
-                fadeOverlay.style.pointerEvents = 'none';
+              // Only turn off loading for non-Gyro modes
+              if (!isGyroMode) {
+                setIsLoading(false);
               }
 
-              // Determine if we're in gyro or VR mode
-              const isGyroMode = modeManager.mode === 'gyro';
+              // Reset fade overlay to transparent after scene loads (ready for next transition)
+              setTimeout(() => {
+                const fadeOverlay = document.getElementById('gyro-fade-transition') as HTMLDivElement;
+                if (fadeOverlay) {
+                  fadeOverlay.style.opacity = '0';
+                }
+              }, 50);
 
+              // Setup gyro or VR mode (already determined isGyroMode earlier)
               if (isGyroMode) {
                 enableGyroMode(camera, aScene);
               } else if (modeManager.mode === 'vr') {
@@ -205,14 +182,15 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             // Timeout - force add hotspots anyway
             console.warn(`[AframeViewer] ⚠️ Image load timeout after ${maxAttempts} attempts, adding hotspots anyway for ${currentScene?.id}`);
             addHotspots(aScene);
-            setIsLoading(false);
+            if (!isGyroMode) {
+              setIsLoading(false);
+            }
 
             if (fadeOverlay) {
               fadeOverlay.style.opacity = '0';
               fadeOverlay.style.pointerEvents = 'none';
             }
 
-            const isGyroMode = modeManager.mode === 'gyro';
             if (isGyroMode) {
               enableGyroMode(camera, aScene);
             } else if (modeManager.mode === 'vr') {
@@ -252,14 +230,15 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         // Fallback if elements not found
         console.warn('[AframeViewer] ⚠️ Panorama or sky element not found!');
         addHotspots(aScene);
-        setIsLoading(false);
+        if (!isGyroMode) {
+          setIsLoading(false);
+        }
 
         if (fadeOverlay) {
           fadeOverlay.style.opacity = '0';
           fadeOverlay.style.pointerEvents = 'none';
         }
 
-        const isGyroMode = modeManager.mode === 'gyro';
         if (isGyroMode) {
           enableGyroMode(camera, aScene);
         } else if (modeManager.mode === 'vr') {
@@ -388,12 +367,22 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       
       const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
       if (targetIdx >= 0) {
-        // Click animation
-        hotspot.setAttribute('animation__click', 'property: scale; from: 2 2 2; to: 2.3 2.3 2.3; dur: 150; direction: alternate');
+        // Fade to black
+        const fadeOverlay = document.getElementById('gyro-fade-transition') as HTMLDivElement;
+        if (fadeOverlay) {
+          fadeOverlay.style.opacity = '1';
+        }
         
-        // Fade to next scene
+        // Change scene and fade back
         setTimeout(() => {
           modeManager.setCurrentScene(targetIdx);
+          
+          // Fade in from black after scene loads
+          setTimeout(() => {
+            if (fadeOverlay) {
+              fadeOverlay.style.opacity = '0';
+            }
+          }, 100);
         }, 150);
       }
     };
@@ -699,10 +688,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         width: '100%',
         height: '100%',
         position: 'relative',
+        backgroundColor: '#000000',
       }}
     >
-      {/* Loading Overlay */}
-      {isLoading && (
+      {/* Loading Overlay - only for non-Gyro modes */}
+      {isLoading && modeManager.mode !== 'gyro' && (
         <div
           style={{
             position: 'absolute',
