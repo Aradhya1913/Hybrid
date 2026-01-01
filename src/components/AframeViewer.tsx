@@ -78,9 +78,9 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           </a-scene>
         `;
       } else {
-        // Gyro mode - normal single view
+        // Gyro mode - normal single view with improved raycaster
         containerRef.current.innerHTML = `
-          <a-scene embedded inspector="url: https://aframe.io/releases/latest/aframe-inspector.js">
+          <a-scene embedded>
             <a-assets>
               <img id="panorama" src="${scene?.url || ''}" />
               <img id="arrow-icon" src="/ui/arrow.png" />
@@ -112,6 +112,9 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       const camera = aScene.querySelector('#camera') as any;
       if (!camera) return;
 
+      const currentScene = scenes[modeManager.currentSceneIndex];
+      console.log(`[AframeViewer] 🎬 Scene loaded callback for: ${currentScene?.id}`);
+
       // Show loading indicator
       setIsLoading(true);
       console.log('[AframeViewer] Starting to load scene panorama');
@@ -142,18 +145,25 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       // Wait for panorama image to fully load before showing hotspots
       const panoramaImg = aScene.querySelector('#panorama') as any;
       const sky = aScene.querySelector('#app-sky') as any;
+      const hotspotContainer = aScene.querySelector('#hotspots') as any;
+
+      console.log(`[AframeViewer] Scene elements - panorama: ${!!panoramaImg}, sky: ${!!sky}, hotspots container: ${!!hotspotContainer}`);
 
       if (panoramaImg && sky) {
         // Monitor image load with better detection
         let imageLoadAttempts = 0;
-        const maxAttempts = 50; // 5 seconds max wait
+        const maxAttempts = 100; // 10 seconds max wait (was 5)
         
         const checkImageLoaded = () => {
           imageLoadAttempts++;
-          console.log(`[AframeViewer] Checking image load attempt ${imageLoadAttempts}, complete: ${panoramaImg.complete}, naturalHeight: ${panoramaImg.naturalHeight}`);
+          
+          // Log every 10 attempts to avoid spam
+          if (imageLoadAttempts % 10 === 0 || imageLoadAttempts === 1) {
+            console.log(`[AframeViewer] Image load check ${imageLoadAttempts}/${maxAttempts} for ${currentScene?.id}: complete=${panoramaImg.complete}, height=${panoramaImg.naturalHeight}`);
+          }
           
           if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
-            console.log('[AframeViewer] Panorama image loaded successfully');
+            console.log(`[AframeViewer] ✅ Image loaded after ${imageLoadAttempts} attempts`);
             
             // Add sky fade-in animation
             sky.setAttribute('animation', 'property: opacity; from: 0.5; to: 1; dur: 800; easing: easeInOutQuad');
@@ -163,7 +173,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             
             // Wait a bit more to ensure sky texture is applied
             setTimeout(() => {
-              console.log('[AframeViewer] Adding hotspots after texture applied');
+              console.log(`[AframeViewer] 🔧 Adding hotspots for ${currentScene?.id} (${currentScene?.hotSpots?.length || 0} hotspots)`);
               // Image is loaded, now add hotspots
               addHotspots(aScene);
               setIsLoading(false);
@@ -193,7 +203,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             setTimeout(checkImageLoaded, 100);
           } else {
             // Timeout - force add hotspots anyway
-            console.warn('[AframeViewer] Image load timeout, adding hotspots anyway');
+            console.warn(`[AframeViewer] ⚠️ Image load timeout after ${maxAttempts} attempts, adding hotspots anyway for ${currentScene?.id}`);
             addHotspots(aScene);
             setIsLoading(false);
 
@@ -218,12 +228,16 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         // Start checking if image is loaded (add small delay to let A-Frame initialize)
         setTimeout(() => {
           if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
-            console.log('[AframeViewer] Image already cached/loaded');
+            console.log(`[AframeViewer] Image cached for ${currentScene?.id}`);
             checkImageLoaded();
           } else {
-            panoramaImg.onload = checkImageLoaded;
+            console.log(`[AframeViewer] Starting image load poll for ${currentScene?.id}`);
+            panoramaImg.onload = () => {
+              console.log(`[AframeViewer] onload event for ${currentScene?.id}`);
+              checkImageLoaded();
+            };
             panoramaImg.onerror = () => {
-              console.error('[AframeViewer] Failed to load panorama image');
+              console.error(`[AframeViewer] ❌ Image load error for ${currentScene?.id}`);
               setIsLoading(false);
               if (fadeOverlay) {
                 fadeOverlay.style.opacity = '0';
@@ -236,7 +250,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         }, 100);
       } else {
         // Fallback if elements not found
-        console.warn('[AframeViewer] Panorama or sky element not found, adding hotspots anyway');
+        console.warn('[AframeViewer] ⚠️ Panorama or sky element not found!');
         addHotspots(aScene);
         setIsLoading(false);
 
@@ -285,14 +299,46 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       return;
     }
 
-    console.log(`[AframeViewer] Adding hotspots for scene: ${scene.id}, count: ${scene.hotSpots?.length || 0}`);
+    console.log(`[AframeViewer] 🎯 Adding hotspots for scene: ${scene.id}, count: ${scene.hotSpots?.length || 0}`);
 
     // Add hotspots from scene data
     if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
       scene.hotSpots.forEach((hotspot, idx) => {
-        console.log(`[AframeViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
+        console.log(`[AframeViewer]   → Hotspot ${idx}: yaw=${hotspot.yaw}°, pitch=${hotspot.pitch}°, target=${hotspot.targetSceneId}`);
         addHotspot(hotspotContainer, hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, hotspot.text);
       });
+      
+      // Verify hotspots were added and force render
+      setTimeout(() => {
+        const addedHotspots = hotspotContainer.querySelectorAll('a-image');
+        console.log(`[AframeViewer] ✓ Verification: ${addedHotspots.length} hotspots in DOM for scene ${scene.id}`);
+        
+        // Force A-Frame to re-render
+        if (aScene && aScene.renderer) {
+          try {
+            aScene.renderer.render(aScene.object3D, aScene.camera);
+            console.log('[AframeViewer] ✓ Force rendered scene');
+          } catch (e) {
+            console.warn('[AframeViewer] Could not force render:', e);
+          }
+        }
+        
+        if (addedHotspots.length === 0) {
+          console.error('[AframeViewer] ❌ ERROR: Hotspots were not added to DOM! Retrying...');
+          // Retry adding hotspots
+          scene.hotSpots.forEach((hotspot, idx) => {
+            console.log(`[AframeViewer]   🔄 RETRY ${idx}: yaw=${hotspot.yaw}°, pitch=${hotspot.pitch}°, target=${hotspot.targetSceneId}`);
+            addHotspot(hotspotContainer, hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, hotspot.text);
+          });
+          
+          // Force render again after retry
+          setTimeout(() => {
+            if (aScene && aScene.renderer) {
+              aScene.renderer.render(aScene.object3D, aScene.camera);
+            }
+          }, 100);
+        }
+      }, 300);
     } else {
       // Fallback: add a single hotspot to next scene
       console.log('[AframeViewer] No hotspots defined, adding fallback hotspot');
@@ -311,7 +357,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     // Convert spherical to cartesian
     const yaw = (yawDeg * Math.PI) / 180;
     const pitch = (pitchDeg * Math.PI) / 180;
-    const distance = 5;
+    const distance = 15; // INCREASED from 5 to 15 for better visibility
 
     const x = distance * Math.cos(pitch) * Math.sin(yaw);
     const y = distance * Math.sin(pitch);
@@ -323,33 +369,87 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     const hotspot = document.createElement('a-image');
     hotspot.setAttribute('src', '#arrow-icon');
     hotspot.setAttribute('position', position);
-    hotspot.setAttribute('scale', '0.8 0.8 0.8');
-    hotspot.setAttribute('look-at', '[camera]');
+    hotspot.setAttribute('scale', '2 2 2'); // INCREASED from 1.2 to 2 for visibility
+    // Don't use look-at - instead manually set a constrained rotation
+    hotspot.setAttribute('rotation', '0 0 0');
+    hotspot.setAttribute('data-target-scene-id', targetSceneId);
     hotspot.classList.add('clickable');
     hotspot.style.cursor = 'pointer';
     
-    // Store target scene ID for click handler
-    hotspot.setAttribute('data-target-scene-id', targetSceneId);
+    // Add opacity and animation attributes - FORCED VISIBLE
+    hotspot.setAttribute('opacity', '1');
+    hotspot.setAttribute('visible', 'true');
+    hotspot.setAttribute('animation', 'property: scale; from: 1.6 1.6 1.6; to: 2 2 2; dur: 600; easing: easeInOutQuad');
+
+    console.log(`[AframeViewer] Creating hotspot: yaw=${yawDeg}, pitch=${pitchDeg}, pos=(${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}), target=${targetSceneId}`);
 
     const handleHotspotClick = () => {
       console.log('[AframeViewer] Hotspot clicked, target:', targetSceneId);
-      // Click animation
-      const originalScale = '0.8 0.8 0.8';
-      const clickScale = '1.1 1.1 1.1';
-      hotspot.setAttribute('scale', clickScale);
-      setTimeout(() => {
-        hotspot.setAttribute('scale', originalScale);
-      }, 150);
       
       const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
       if (targetIdx >= 0) {
-        modeManager.setCurrentScene(targetIdx);
+        // Click animation
+        hotspot.setAttribute('animation__click', 'property: scale; from: 2 2 2; to: 2.3 2.3 2.3; dur: 150; direction: alternate');
+        
+        // Fade to next scene
+        setTimeout(() => {
+          modeManager.setCurrentScene(targetIdx);
+        }, 150);
       }
     };
 
-    // Handle click with feedback
+    // Handle both click and intersection for raycaster
     hotspot.addEventListener('click', handleHotspotClick);
     
+    // Handle raycaster intersection (fuse event)
+    hotspot.addEventListener('raycaster-intersection', () => {
+      console.log('[AframeViewer] Raycaster intersected hotspot:', targetSceneId);
+    });
+
+    hotspot.addEventListener('raycaster-intersection-cleared', () => {
+      console.log('[AframeViewer] Raycaster cleared from hotspot:', targetSceneId);
+    });
+
+    // CONSTRAINED BILLBOARD: Update rotation to face camera but limit extreme angles
+    const updateHotspotRotation = (aScene: any) => {
+      if (!aScene?.camera) return;
+      
+      // Get the Three.js object from the A-Frame entity
+      const hotspotMesh = (hotspot as any).object3D;
+      if (!hotspotMesh) return;
+      
+      const camera = aScene.camera;
+      const hotspotPos = hotspotMesh.position.clone();
+      const cameraPos = camera.getWorldPosition(new THREE.Vector3());
+      
+      // Calculate direction from hotspot to camera
+      const direction = cameraPos.clone().sub(hotspotPos).normalize();
+      
+      // Create a quaternion that represents looking at the camera
+      const lookAtQuat = new THREE.Quaternion();
+      const up = new THREE.Vector3(0, 1, 0);
+      
+      // Use a matrix to calculate rotation
+      const matrix = new THREE.Matrix4();
+      matrix.lookAt(hotspotPos, cameraPos, up);
+      lookAtQuat.setFromRotationMatrix(matrix);
+      
+      // Apply the rotation
+      hotspotMesh.quaternion.copy(lookAtQuat);
+    };
+    
+    // First update after small delay
+    setTimeout(() => {
+      updateHotspotRotation(sceneRef.current);
+    }, 100);
+    
+    // Keep updating to maintain billboard effect
+    const rotationInterval = setInterval(() => {
+      updateHotspotRotation(sceneRef.current);
+    }, 300);
+    
+    hotspot.addEventListener('remove', () => clearInterval(rotationInterval));
+
     // IMPORTANT: Add touch event support for mobile devices
     hotspot.addEventListener('touchend', (e: TouchEvent) => {
       e.preventDefault();
@@ -359,14 +459,16 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
     // Handle hover with smooth transition
     hotspot.addEventListener('mouseenter', () => {
-      hotspot.setAttribute('scale', '1 1 1');
+        hotspot.setAttribute('scale', '2.3 2.3 2.3');
+        hotspot.setAttribute('animation__hover', 'property: scale; to: 2.5 2.5 2.5; dur: 200');
     });
 
     hotspot.addEventListener('mouseleave', () => {
-      hotspot.setAttribute('scale', '0.8 0.8 0.8');
+        hotspot.setAttribute('scale', '2 2 2');
     });
 
     container.appendChild(hotspot);
+    console.log(`[AframeViewer] ✓ Hotspot added to DOM with position ${position}, target: ${targetSceneId}`);
   };
 
   const enableGyroMode = async (camera: any, aScene: any) => {
@@ -397,114 +499,60 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const setupMobileHotspotDetection = (aScene: any) => {
     console.log('[AframeViewer] Setting up hotspot detection');
     
-    const cursor = aScene.querySelector('#cursor') as any;
-    const hotspots = aScene.querySelectorAll('.clickable');
+    // Add a small delay to ensure hotspots are in DOM
+    setTimeout(() => {
+      const hotspotContainer = aScene.querySelector('#hotspots');
+      const hotspots = hotspotContainer?.querySelectorAll('a-image') || [];
 
-    console.log('[AframeViewer] Found hotspots:', hotspots.length);
-
-    // Setup event listeners on each hotspot
-    hotspots.forEach((hotspot: any, index: number) => {
-      const targetSceneId = hotspot.getAttribute('data-target-scene-id');
-      console.log(`[AframeViewer] Hotspot ${index}: ${targetSceneId}`);
-
-      const handleHotspotClick = () => {
-        console.log('[AframeViewer] Hotspot clicked/fused:', targetSceneId);
-        
-        const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
-        if (targetIdx >= 0) {
-          // Click animation
-          const originalScale = '0.8 0.8 0.8';
-          const clickScale = '1.1 1.1 1.1';
-          hotspot.setAttribute('scale', clickScale);
-          setTimeout(() => {
-            hotspot.setAttribute('scale', originalScale);
-          }, 150);
-          
-          console.log('[AframeViewer] Navigating to scene:', targetIdx);
-          modeManager.setCurrentScene(targetIdx);
+      console.log(`[AframeViewer] ✓ Found ${hotspots.length} hotspots in DOM`);
+      
+      if (hotspots.length === 0) {
+        console.warn('[AframeViewer] ⚠ WARNING: No hotspots found in DOM!');
+        // Try to find them by checking innerHTML
+        if (hotspotContainer) {
+          console.log('[AframeViewer] Hotspot container HTML:', hotspotContainer.innerHTML.substring(0, 500));
         }
-      };
+        return;
+      }
 
-      // Listen for cursor-fuse event (gaze-based click in VR mode)
-      hotspot.addEventListener('fuse', () => {
-        console.log('[AframeViewer] Fuse event on hotspot');
-        handleHotspotClick();
-      });
+      // Setup event listeners on each hotspot
+      hotspots.forEach((hotspot: any, index: number) => {
+        const targetSceneId = hotspot.getAttribute('data-target-scene-id');
+        const pos = hotspot.getAttribute('position');
+        console.log(`[AframeViewer] Hotspot ${index}: target=${targetSceneId}, position=${pos}, visible=${hotspot.getAttribute('visible')}`);
 
-      // Raycaster intersection events for hover feedback
-      hotspot.addEventListener('raycaster-intersected', () => {
-        console.log('[AframeViewer] Raycaster intersected');
-        hotspot.setAttribute('scale', '1 1 1');
-      });
-
-      hotspot.addEventListener('raycaster-cleared', () => {
-        console.log('[AframeViewer] Raycaster cleared');
-        hotspot.setAttribute('scale', '0.8 0.8 0.8');
-      });
-
-      // Click events for desktop
-      hotspot.addEventListener('click', () => {
-        console.log('[AframeViewer] Click event on hotspot');
-        handleHotspotClick();
-      });
-
-      // Touch events for mobile non-VR
-      hotspot.addEventListener('touchend', (e: TouchEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('[AframeViewer] Touchend event on hotspot');
-        handleHotspotClick();
-      }, { passive: false });
-    });
-
-    // Setup canvas-level tap detection
-    const canvas = aScene.canvas;
-    if (canvas) {
-      const handleCanvasTap = () => {
-        console.log('[AframeViewer] Canvas tapped');
-        
-        // In VR mode, tapping anywhere with cursor on hotspot should click
-        // The cursor fuse will handle this, but we add this as fallback
-        const raycaster = new THREE.Raycaster();
-        const camera = aScene.camera as THREE.Camera;
-        
-        if (!camera) return;
-        
-        // Center of screen
-        const mouse = new THREE.Vector2(0, 0);
-        raycaster.setFromCamera(mouse, camera);
-        
-        // Get all hotspot objects
-        const hotspotObjects: THREE.Object3D[] = [];
-        hotspots.forEach((h: any) => {
-          if (h.object3D) {
-            hotspotObjects.push(h.object3D);
+        const handleHotspotClick = () => {
+          console.log('[AframeViewer] Hotspot clicked:', targetSceneId);
+          const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
+          if (targetIdx >= 0) {
+            modeManager.setCurrentScene(targetIdx);
           }
-        });
-        
-        // Check for intersections
-        const intersects = raycaster.intersectObjects(hotspotObjects, true);
-        
-        if (intersects.length > 0) {
-          console.log('[AframeViewer] Canvas tap hit hotspot');
-          
-          // Find the corresponding hotspot element
-          hotspots.forEach((h: any) => {
-            if (h.object3D && intersects[0].object.parent?.parent?.userData?.aframeEntity === h) {
-              console.log('[AframeViewer] Triggering hotspot click from canvas tap');
-              h.click?.();
-            }
-          });
-        }
-      };
+        };
 
-      // Listen for screen taps
-      canvas.addEventListener('click', handleCanvasTap);
-      canvas.addEventListener('touchend', (e: TouchEvent) => {
-        e.preventDefault();
-        handleCanvasTap();
-      }, { passive: false });
-    }
+        // Add click handler directly
+        hotspot.addEventListener('click', handleHotspotClick);
+
+        // Add cursor fuse event (for A-Frame raycaster)
+        hotspot.addEventListener('fuse', handleHotspotClick);
+        
+        // Raycaster intersection events for hover feedback
+        hotspot.addEventListener('raycaster-intersected', () => {
+          console.log('[AframeViewer] Raycaster intersected:', targetSceneId);
+          hotspot.setAttribute('scale', '1.4 1.4 1.4');
+        });
+
+        hotspot.addEventListener('raycaster-intersected-cleared', () => {
+          console.log('[AframeViewer] Raycaster cleared:', targetSceneId);
+          hotspot.setAttribute('scale', '1.2 1.2 1.2');
+        });
+      });
+
+      // Force render update
+      if (aScene && aScene.renderer) {
+        console.log('[AframeViewer] Triggering render update');
+        aScene.renderer.render(aScene.object3D, aScene.camera);
+      }
+    }, 300);
   };
 
   const setupDeviceOrientation = (camera: any) => {

@@ -206,6 +206,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const scene = scenes[index];
     setCurrentTitle(scene.title);
+    console.log(`[ThreejsViewer] Loading scene: ${scene.id}, hotspots: ${scene.hotSpots?.length || 0}`);
 
     // Clear hotspots immediately when transitioning
     clearHotspots();
@@ -232,40 +233,49 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     // Fade in
     fadeOverlay.style.opacity = '1';
-    fadeOverlay.style.pointerEvents = 'auto';
+    fadeOverlay.style.pointerEvents = 'none'; // Don't block interactions
 
     // Load texture with fade out after load
     textureLoaderRef.current.load(
       scene.url,
       (texture) => {
+        console.log(`[ThreejsViewer] Texture loaded for scene: ${scene.id}`);
         texture.colorSpace = THREE.SRGBColorSpace;
         if (sphereRef.current && sphereRef.current.material instanceof THREE.MeshBasicMaterial) {
           sphereRef.current.material.map = texture;
           sphereRef.current.material.needsUpdate = true;
           
-          // Add hotspots AFTER texture is loaded
-          if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
-            scene.hotSpots.forEach((hotspot) => {
-              addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
-                size: 0.7,
-                text: hotspot.text,
-              });
-            });
-          } else {
-            const nextIdx = (index + 1) % scenes.length;
-            addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
-          }
-          
-          // Fade out overlay after texture loads and hotspots are added
+          // Wait a frame for material update
           setTimeout(() => {
-            fadeOverlay.style.opacity = '0';
-            fadeOverlay.style.pointerEvents = 'none';
-          }, 300);
+            console.log(`[ThreejsViewer] Adding ${scene.hotSpots?.length || 0} hotspots`);
+            
+            // Add hotspots AFTER texture is loaded
+            if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
+              scene.hotSpots.forEach((hotspot, idx) => {
+                console.log(`[ThreejsViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
+                addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
+                  size: 0.7,
+                  text: hotspot.text,
+                });
+              });
+            } else {
+              console.log('[ThreejsViewer] No hotspots defined, adding fallback');
+              const nextIdx = (index + 1) % scenes.length;
+              addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
+            }
+            
+            // Fade out overlay after hotspots are added
+            setTimeout(() => {
+              console.log('[ThreejsViewer] Fading out overlay');
+              fadeOverlay.style.opacity = '0';
+              fadeOverlay.style.pointerEvents = 'none';
+            }, 200);
+          }, 50);
         }
       },
       undefined,
       (error) => {
-        console.error('[ThreejsViewer] Failed to load:', scene.url, error);
+        console.error('[ThreejsViewer] Failed to load texture:', scene.url, error);
         // Fade out on error too
         fadeOverlay.style.opacity = '0';
         fadeOverlay.style.pointerEvents = 'none';
