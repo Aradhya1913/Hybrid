@@ -116,6 +116,29 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       setIsLoading(true);
       console.log('[AframeViewer] Starting to load scene panorama');
 
+      // Show fade overlay immediately and disable pointer events so raycaster works
+      let fadeOverlay = document.getElementById('fade-overlay-gyro');
+      if (!fadeOverlay) {
+        fadeOverlay = document.createElement('div');
+        fadeOverlay.id = 'fade-overlay-gyro';
+        fadeOverlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 998;
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out;
+          pointer-events: none;
+        `;
+        document.body.appendChild(fadeOverlay);
+      }
+
+      fadeOverlay.style.opacity = '1';
+      fadeOverlay.style.pointerEvents = 'none'; // CRITICAL: Don't block raycaster
+
       // Wait for panorama image to fully load before showing hotspots
       const panoramaImg = aScene.querySelector('#panorama') as any;
       const sky = aScene.querySelector('#app-sky') as any;
@@ -146,7 +169,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
               setIsLoading(false);
 
               // Fade out the overlay
-              const fadeOverlay = document.getElementById('fade-overlay-gyro');
               if (fadeOverlay) {
                 fadeOverlay.style.opacity = '0';
                 fadeOverlay.style.pointerEvents = 'none';
@@ -175,7 +197,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             addHotspots(aScene);
             setIsLoading(false);
 
-            const fadeOverlay = document.getElementById('fade-overlay-gyro');
             if (fadeOverlay) {
               fadeOverlay.style.opacity = '0';
               fadeOverlay.style.pointerEvents = 'none';
@@ -204,7 +225,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             panoramaImg.onerror = () => {
               console.error('[AframeViewer] Failed to load panorama image');
               setIsLoading(false);
-              const fadeOverlay = document.getElementById('fade-overlay-gyro');
               if (fadeOverlay) {
                 fadeOverlay.style.opacity = '0';
                 fadeOverlay.style.pointerEvents = 'none';
@@ -220,7 +240,6 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         addHotspots(aScene);
         setIsLoading(false);
 
-        const fadeOverlay = document.getElementById('fade-overlay-gyro');
         if (fadeOverlay) {
           fadeOverlay.style.opacity = '0';
           fadeOverlay.style.pointerEvents = 'none';
@@ -250,7 +269,10 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
   const addHotspots = (aScene: any) => {
     const hotspotContainer = aScene.querySelector('#hotspots') as any;
-    if (!hotspotContainer) return;
+    if (!hotspotContainer) {
+      console.error('[AframeViewer] Hotspot container not found!');
+      return;
+    }
 
     // Clear existing hotspots
     while (hotspotContainer.firstChild) {
@@ -258,15 +280,22 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     }
 
     const scene = scenes[modeManager.currentSceneIndex];
-    if (!scene) return;
+    if (!scene) {
+      console.error('[AframeViewer] Scene not found at index:', modeManager.currentSceneIndex);
+      return;
+    }
+
+    console.log(`[AframeViewer] Adding hotspots for scene: ${scene.id}, count: ${scene.hotSpots?.length || 0}`);
 
     // Add hotspots from scene data
     if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
-      scene.hotSpots.forEach((hotspot) => {
+      scene.hotSpots.forEach((hotspot, idx) => {
+        console.log(`[AframeViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
         addHotspot(hotspotContainer, hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, hotspot.text);
       });
     } else {
       // Fallback: add a single hotspot to next scene
+      console.log('[AframeViewer] No hotspots defined, adding fallback hotspot');
       const nextIdx = (modeManager.currentSceneIndex + 1) % scenes.length;
       addHotspot(hotspotContainer, 0, 0, scenes[nextIdx].id, 'Next');
     }
