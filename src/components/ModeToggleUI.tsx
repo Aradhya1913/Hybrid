@@ -7,7 +7,7 @@ export function ModeToggleUI() {
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
@@ -76,6 +76,13 @@ export function ModeToggleUI() {
       unlockOrientation();
       void exitFullscreen();
       switchMode(capabilities.hasGyroscope ? 'gyro' : 'normal');
+      return;
+    }
+
+    // In gyro mode, do not allow switching directly to VR.
+    // User must exit gyro back to normal first.
+    if (mode === 'gyro') {
+      switchMode('normal');
       return;
     }
 
@@ -199,7 +206,7 @@ export function ModeToggleUI() {
               setIsMenuOpen(false);
               handleVRClick();
             }}
-            aria-label={mode === 'vr' ? 'Exit VR' : 'Enter VR'}
+            aria-label={mode === 'vr' ? 'Exit VR' : mode === 'gyro' ? 'Exit Gyro' : 'Enter VR'}
             style={{
               padding: '10px 14px',
               borderRadius: 4,
@@ -236,7 +243,7 @@ export function ModeToggleUI() {
             }}
           >
             <span className="ui-btn-icon" style={{ fontSize: 16 }}>⌂</span>
-            <span className="ui-btn-label">{mode === 'vr' ? 'Exit VR' : 'Enter VR'}</span>
+            <span className="ui-btn-label">{mode === 'vr' ? 'Exit VR' : mode === 'gyro' ? 'Exit Gyro' : 'Enter VR'}</span>
           </button>
 
           {capabilities.hasGyroscope && (
@@ -282,8 +289,8 @@ export function ModeToggleUI() {
                 el.style.transform = 'scale(1)';
               }}
             >
-              <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
-              <span className="ui-btn-label">{mode === 'gyro' ? 'Gyro Enabled' : 'Enable Gyro'}</span>
+              <span className="ui-btn-icon" style={{ fontSize: 16 }}>⌂</span>
+              <span className="ui-btn-label">{mode === 'gyro' ? 'Exit Gyro' : 'Enter Gyro'}</span>
             </button>
           )}
         </div>

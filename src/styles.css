@@ -68,24 +68,6 @@ canvas {
   }
 
   /* Bottom-right gyro button is also icon-only on mobile */
-  .ui-gyro-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-height: 44px !important;
-    padding: 0 !important;
-    justify-content: center !important;
-    gap: 0 !important;
-  }
-
-  .ui-gyro-btn .ui-btn-label {
-    display: none !important;
-  }
-
-  .ui-gyro-btn .ui-btn-icon {
-    font-size: 18px !important;
-    line-height: 1 !important;
-  }
-
   .ui-locations-btn {
     left: calc(10px + env(safe-area-inset-left)) !important;
   }
@@ -144,21 +126,6 @@ canvas {
   }
 
   .ui-gyro-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-height: 44px !important;
-    padding: 0 !important;
-    justify-content: center !important;
-    gap: 0 !important;
-  }
-
-  .ui-gyro-btn .ui-btn-label {
-    display: none !important;
-  }
-
-  .ui-gyro-btn .ui-btn-icon {
-    font-size: 18px !important;
-    line-height: 1 !important;
   }
 
   .ui-logo {

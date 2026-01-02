@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useModeManager } from './ModeManager';
 import { SceneDef } from '../data/scenes';
 
 export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { setCurrentScene } = useModeManager();
+  const lastScrollSoundAtRef = useRef(0);
 
-  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
@@ -121,6 +122,16 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
                 overflowY: 'auto',
                 flex: 1,
                 paddingRight: 4,
+              }}
+              onScroll={() => {
+                const now = Date.now();
+                // Throttle so we don't spam audio while scrolling.
+                if (now - lastScrollSoundAtRef.current < 220) return;
+                lastScrollSoundAtRef.current = now;
+
+                const hoverSound = new Audio('/media/hover.mp3');
+                hoverSound.volume = 0.2;
+                hoverSound.play().catch(() => {});
               }}
             >
               {scenes.map((s, i) => (

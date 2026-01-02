@@ -58,9 +58,23 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
   const hoveredHotspotRef = useRef<THREE.Object3D | null>(null);
 
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const isCoarsePointerRef = useRef(false);
+  const centerPointerRef = useRef<THREE.Vector2>(new THREE.Vector2(0, 0));
+
   // Initialize Three.js scene
   useEffect(() => {
     if (!containerRef.current) return;
+
+    // Detect mobile/touch devices (no hover + coarse pointer).
+    const mq = window.matchMedia?.('(hover: none) and (pointer: coarse)');
+    const updatePointerMode = () => {
+      const coarse = !!mq?.matches;
+      isCoarsePointerRef.current = coarse;
+      setIsCoarsePointer(coarse);
+    };
+    updatePointerMode();
+    mq?.addEventListener?.('change', updatePointerMode);
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -125,8 +139,10 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       // Check for hotspot hover
       if (cameraRef.current && rendererRef.current && hotspotGroupRef.current) {
         const rect = rendererRef.current.domElement.getBoundingClientRect();
-        // Get current mouse position (using last known position)
-        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+        // Desktop: use last known pointer position (mouse). Mobile: use center reticle.
+        const pointerNdc = isCoarsePointerRef.current ? centerPointerRef.current : mouseRef.current;
+        raycasterRef.current.setFromCamera(pointerNdc, cameraRef.current);
         const intersects = raycasterRef.current.intersectObjects(hotspotGroupRef.current.children);
         
         // Reset all hotspots
@@ -204,9 +220,11 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
         hoveredHotspotRef.current = newHoveredHotspot;
         
-        // Reset cursor if no hotspot hovered
+        // Reset cursor if no hotspot hovered (desktop only)
         if (intersects.length === 0) {
-          rendererRef.current.domElement.style.cursor = inputRef.current.isMouseDown ? 'grabbing' : 'grab';
+          if (!isCoarsePointerRef.current) {
+            rendererRef.current.domElement.style.cursor = inputRef.current.isMouseDown ? 'grabbing' : 'grab';
+          }
 
           // Hide tooltip when not hovering
           const tooltipEl = hotspotTooltipRef.current;
@@ -240,6 +258,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
+      mq?.removeEventListener?.('change', updatePointerMode);
       renderer.dispose();
       geometry.dispose();
       material.dispose();
@@ -794,13 +813,13 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
           transform: 'translate(-50%, -50%)',
           zIndex: 100,
           pointerEvents: 'none',
-          width: 60,
-          height: 60,
-          border: '3px solid rgba(255, 255, 255, 0)',
+          width: 18,
+          height: 18,
+          border: isCoarsePointer ? '2px solid rgba(0, 0, 0, 0.55)' : '2px solid rgba(255, 255, 255, 0)',
           borderRadius: '50%',
-          boxShadow: 'inset 0 0 0 2px rgba(100, 200, 255, 0)',
-          opacity: 0,
-          visibility: 'hidden',
+          boxShadow: isCoarsePointer ? 'inset 0 0 0 2px rgba(0, 0, 0, 0.15)' : 'inset 0 0 0 2px rgba(100, 200, 255, 0)',
+          opacity: isCoarsePointer ? 1 : 0,
+          visibility: isCoarsePointer ? 'visible' : 'hidden',
         }}
       >
         {/* Inner dot */}
@@ -810,11 +829,11 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            width: 8,
-            height: 8,
-            backgroundColor: 'rgba(100, 200, 255, 0)',
+            width: 3,
+            height: 3,
+            backgroundColor: isCoarsePointer ? 'rgba(0, 0, 0, 0.7)' : 'rgba(100, 200, 255, 0)',
             borderRadius: '50%',
-            boxShadow: '0 0 10px rgba(100, 200, 255, 0)',
+            boxShadow: isCoarsePointer ? '0 0 10px rgba(0, 0, 0, 0.2)' : '0 0 10px rgba(100, 200, 255, 0)',
           }}
         />
       </div>

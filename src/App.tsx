@@ -13,7 +13,7 @@ function AppContent() {
   const [isPlaying, setIsPlaying] = useState(false)
 
   const UI_NEUTRAL = 'rgba(231, 231, 231, 1)'
-  const UI_ACCENT = 'rgba(215, 244, 71, 1)'
+  const UI_ACCENT = 'rgba(0, 0, 0, 1)'
   const UI_DARK = 'rgba(30, 30, 30, 1)'
 
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)'
@@ -23,7 +23,7 @@ function AppContent() {
   useEffect(() => {
     const bgMusic = new Audio('/media/bg.mp3')
     bgMusic.loop = true
-    bgMusic.volume = 0.3
+    bgMusic.volume = 0.14
     bgMusicRef.current = bgMusic
 
     // Play on first user interaction (required by browsers)

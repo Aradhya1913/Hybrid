@@ -10,7 +10,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const sceneRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
@@ -108,7 +108,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             </a-assets>
             <a-sky id="app-sky" src="#panorama" rotation="0 0 0"></a-sky>
             <a-camera id="camera" position="0 0 0" look-controls="enabled: true; pointerLockEnabled: true" wasd-controls="enabled: false">
-              <a-cursor id="cursor" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
+              <a-cursor id="cursor" visible="false" fuse="true" fuseTimeout="1500" raycaster="far: 10000; objects: .clickable"></a-cursor>
             </a-camera>
             <a-entity id="hotspots"></a-entity>
           </a-scene>
@@ -830,6 +830,41 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         }}
       />
 
+      {/* Center reticle (Gyro mode) */}
+      {modeManager.mode === 'gyro' && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1200,
+            pointerEvents: 'none',
+            width: 18,
+            height: 18,
+            border: '2px solid rgba(0, 0, 0, 0.55)',
+            borderRadius: '50%',
+            boxShadow: 'inset 0 0 0 2px rgba(0, 0, 0, 0.15)',
+            opacity: 1,
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 3,
+              height: 3,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              borderRadius: '50%',
+              boxShadow: '0 0 10px rgba(0, 0, 0, 0.2)',
+            }}
+          />
+        </div>
+      )}
+
       {/* VR Toggle (A-Frame) */}
       <button
         onClick={() => {
@@ -887,18 +922,26 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
             }
           };
 
+          if (modeManager.mode === 'gyro') {
+            // Do not allow switching directly from gyro to VR.
+            // User must exit gyro back to normal first.
+            modeManager.switchMode('normal');
+            return;
+          }
+
           if (modeManager.mode === 'vr') {
             unlockOrientation();
             void exitFullscreen();
             modeManager.switchMode(modeManager.capabilities.hasGyroscope ? 'gyro' : 'normal');
-          } else {
-            // Best-effort: fullscreen + lock orientation on user gesture
-            void requestFullscreen(document.documentElement);
-            void lockLandscape();
-            modeManager.switchMode('vr');
+            return;
           }
+
+          // Best-effort: fullscreen + lock orientation on user gesture
+          void requestFullscreen(document.documentElement);
+          void lockLandscape();
+          modeManager.switchMode('vr');
         }}
-        aria-label={modeManager.mode === 'vr' ? 'Exit VR' : 'Enter VR'}
+        aria-label={modeManager.mode === 'vr' ? 'Exit VR' : modeManager.mode === 'gyro' ? 'Exit Gyro' : 'Enter VR'}
         style={{
           position: 'fixed',
           top: 'calc(20px + env(safe-area-inset-top))',
@@ -941,7 +984,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         }}
       >
         <span style={{ fontSize: 16 }}>⌂</span>
-        <span>{modeManager.mode === 'vr' ? 'Exit VR' : 'Enter VR'}</span>
+        <span>{modeManager.mode === 'vr' ? 'Exit VR' : modeManager.mode === 'gyro' ? 'Exit Gyro' : 'Enter VR'}</span>
       </button>
 
       {/* Tooltip for hotspot hover */}
