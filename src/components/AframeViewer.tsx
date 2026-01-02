@@ -10,6 +10,9 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const sceneRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const gyroOffsetsRef = useRef<{ yaw: number; pitch: number }>({ yaw: 0, pitch: 0 });
+  const gyroOrientationCleanupRef = useRef<null | (() => void)>(null);
+
   const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
@@ -126,6 +129,23 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
         const currentScene = scenes[modeManager.currentSceneIndex];
         console.log(`[AframeViewer] 🎬 Scene loaded callback for: ${currentScene?.id}`);
+
+        // Apply per-panorama initial viewing direction.
+        // VR: set the camera rotation directly (look-controls will start from here).
+        // Gyro: store offsets so deviceorientation applies the per-panorama alignment.
+        const initialYaw = currentScene?.initialView?.yaw ?? 0;
+        const initialPitch = currentScene?.initialView?.pitch ?? 0;
+        gyroOffsetsRef.current = { yaw: initialYaw, pitch: initialPitch };
+
+        try {
+          camera.setAttribute('rotation', {
+            x: initialPitch,
+            y: initialYaw,
+            z: 0,
+          });
+        } catch {
+          // Ignore
+        }
 
         // Show loading indicator (but not for A-Frame Gyro - instant transitions)
         const isGyroMode = modeManager.mode === 'gyro';
@@ -280,6 +300,12 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     setupScene();
 
     return () => {
+      // Clean up deviceorientation listener between scene mounts.
+      if (gyroOrientationCleanupRef.current) {
+        gyroOrientationCleanupRef.current();
+        gyroOrientationCleanupRef.current = null;
+      }
+
       if (sceneMountRef.current) {
         sceneMountRef.current.innerHTML = '';
       }
@@ -537,6 +563,12 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const enableGyroMode = async (camera: any, aScene: any) => {
     console.log('[AframeViewer] Enabling gyro mode');
 
+    // Ensure we don't stack multiple listeners across scene changes.
+    if (gyroOrientationCleanupRef.current) {
+      gyroOrientationCleanupRef.current();
+      gyroOrientationCleanupRef.current = null;
+    }
+
     // Request permission for iOS 13+
     if (typeof DeviceOrientationEvent !== 'undefined') {
       if ((DeviceOrientationEvent as any).requestPermission) {
@@ -544,7 +576,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           const permission = await (DeviceOrientationEvent as any).requestPermission();
           if (permission === 'granted') {
             console.log('[AframeViewer] Permission granted, enabling device orientation');
-            setupDeviceOrientation(camera);
+              gyroOrientationCleanupRef.current = setupDeviceOrientation(camera);
           } else {
             console.warn('[AframeViewer] Permission denied');
           }
@@ -554,7 +586,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       } else {
         // Non-iOS devices
         console.log('[AframeViewer] Non-iOS device, enabling device orientation');
-        setupDeviceOrientation(camera);
+        gyroOrientationCleanupRef.current = setupDeviceOrientation(camera);
       }
     }
   };
@@ -663,14 +695,16 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       const alpha = event.alpha || 0;
       const beta = event.beta || 0;
 
+      const { yaw: yawOffsetDeg, pitch: pitchOffsetDeg } = gyroOffsetsRef.current;
+
       const radBeta = (beta * Math.PI) / 180;
       const radAlpha = (alpha * Math.PI) / 180;
 
       const clampedBeta = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, radBeta));
 
       camera.setAttribute('rotation', {
-        x: THREE.MathUtils.radToDeg(clampedBeta),
-        y: THREE.MathUtils.radToDeg(radAlpha),
+        x: THREE.MathUtils.radToDeg(clampedBeta) + pitchOffsetDeg,
+        y: THREE.MathUtils.radToDeg(radAlpha) + yawOffsetDeg,
         z: 0,
       });
     };

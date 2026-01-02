@@ -58,6 +58,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
   const hoveredHotspotRef = useRef<THREE.Object3D | null>(null);
 
+  const sceneLoadIdRef = useRef(0);
+  const isTransitioningRef = useRef(false);
+
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const isCoarsePointerRef = useRef(false);
   const centerPointerRef = useRef<THREE.Vector2>(new THREE.Vector2(0, 0));
@@ -234,8 +237,8 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         }
       }
 
-      // Apply inertia
-      if (inputRef.current.isTouching) {
+      // Apply inertia (skip while transitioning)
+      if (!isTransitioningRef.current && inputRef.current.isTouching) {
         inputRef.current.touchVelocityX *= 0.95;
         inputRef.current.touchVelocityY *= 0.95;
 
@@ -272,12 +275,25 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     if (!scenes || scenes.length === 0) return;
     index = ((index % scenes.length) + scenes.length) % scenes.length;
 
+    const loadId = ++sceneLoadIdRef.current;
+
     const scene = scenes[index];
-    setCurrentTitle(scene.title);
     console.log(`[ThreejsViewer] Loading scene: ${scene.id}, hotspots: ${scene.hotSpots?.length || 0}`);
 
-    // Clear hotspots immediately when transitioning
-    clearHotspots();
+    // Compute per-panorama starting orientation (trial-and-error lives in scenes.ts).
+    // IMPORTANT: we don't apply this immediately because it causes the *old* panorama
+    // to visibly jump before the fade overlay fully covers the screen.
+    const initialYaw = scene.initialView?.yaw ?? 0;
+    const initialPitch = scene.initialView?.pitch ?? 0;
+
+    const FADE_TO_BLACK_MS = 1000;
+
+    // Freeze input and motion during transitions to avoid any visible drift.
+    isTransitioningRef.current = true;
+    inputRef.current.isMouseDown = false;
+    inputRef.current.isTouching = false;
+    inputRef.current.touchVelocityX = 0;
+    inputRef.current.touchVelocityY = 0;
 
     // Show fade overlay for transition
     let fadeOverlay = document.getElementById('fade-overlay-threejs');
@@ -290,65 +306,86 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 1);
         z-index: 998;
         opacity: 0;
-        transition: opacity 0.5s ease-in-out;
+        transition: opacity 1s ease-in-out;
         pointer-events: none;
       `;
       document.body.appendChild(fadeOverlay);
+    } else {
+      // Ensure existing overlay is fully opaque black (older versions used 0.7 alpha).
+      fadeOverlay.style.background = 'rgba(0, 0, 0, 1)';
     }
 
-    // Fade in
+    // 1) Fade the CURRENT panorama to black over 1s.
+    fadeOverlay.style.pointerEvents = 'none';
+    fadeOverlay.style.transition = `opacity ${FADE_TO_BLACK_MS}ms ease-in-out`;
+    fadeOverlay.style.opacity = '0';
+    void (fadeOverlay as HTMLDivElement).offsetHeight;
     fadeOverlay.style.opacity = '1';
-    fadeOverlay.style.pointerEvents = 'none'; // Don't block interactions
 
-    // Load texture with fade out after load
-    textureLoaderRef.current.load(
-      scene.url,
-      (texture) => {
-        console.log(`[ThreejsViewer] Texture loaded for scene: ${scene.id}`);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        if (sphereRef.current && sphereRef.current.material instanceof THREE.MeshBasicMaterial) {
-          sphereRef.current.material.map = texture;
-          sphereRef.current.material.needsUpdate = true;
-          
-          // Wait a frame for material update
-          setTimeout(() => {
-            console.log(`[ThreejsViewer] Adding ${scene.hotSpots?.length || 0} hotspots`);
-            
-            // Add hotspots AFTER texture is loaded
-            if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
-              scene.hotSpots.forEach((hotspot, idx) => {
-                console.log(`[ThreejsViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
-                addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
-                  size: 0.7,
-                  text: hotspot.text,
-                });
-              });
-            } else {
-              console.log('[ThreejsViewer] No hotspots defined, adding fallback');
-              const nextIdx = (index + 1) % scenes.length;
-              addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
-            }
-            
-            // Fade out overlay after hotspots are added
+    // 2) Once fully black, apply orientation + start loading the NEXT panorama.
+    window.setTimeout(() => {
+      if (sceneLoadIdRef.current !== loadId) return;
+
+      // Now that the screen is black, it's safe to change view direction and UI.
+      stateRef.current.yaw = initialYaw;
+      stateRef.current.pitch = Math.max(-85, Math.min(85, initialPitch));
+      setCurrentTitle(scene.title);
+      clearHotspots();
+
+      textureLoaderRef.current.load(
+        scene.url,
+        (texture) => {
+          if (sceneLoadIdRef.current !== loadId) return;
+          console.log(`[ThreejsViewer] Texture loaded for scene: ${scene.id}`);
+          texture.colorSpace = THREE.SRGBColorSpace;
+          if (sphereRef.current && sphereRef.current.material instanceof THREE.MeshBasicMaterial) {
+            sphereRef.current.material.map = texture;
+            sphereRef.current.material.needsUpdate = true;
+
+            // Wait a frame for material update
             setTimeout(() => {
-              console.log('[ThreejsViewer] Fading out overlay');
+              if (sceneLoadIdRef.current !== loadId) return;
+              console.log(`[ThreejsViewer] Adding ${scene.hotSpots?.length || 0} hotspots`);
+
+              // Add hotspots AFTER texture is loaded
+              if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
+                scene.hotSpots.forEach((hotspot, idx) => {
+                  console.log(`[ThreejsViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
+                  addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
+                    size: 0.7,
+                    text: hotspot.text,
+                  });
+                });
+              } else {
+                console.log('[ThreejsViewer] No hotspots defined, adding fallback');
+                const nextIdx = (index + 1) % scenes.length;
+                addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
+              }
+
+              // 3) Reveal immediately once ready (no fade-in), then unfreeze input.
+              fadeOverlay.style.transition = 'none';
               fadeOverlay.style.opacity = '0';
               fadeOverlay.style.pointerEvents = 'none';
-            }, 200);
-          }, 50);
+              void (fadeOverlay as HTMLDivElement).offsetHeight;
+              fadeOverlay.style.transition = `opacity ${FADE_TO_BLACK_MS}ms ease-in-out`;
+
+              isTransitioningRef.current = false;
+            }, 50);
+          }
+        },
+        undefined,
+        (error) => {
+          console.error('[ThreejsViewer] Failed to load texture:', scene.url, error);
+          fadeOverlay.style.transition = 'none';
+          fadeOverlay.style.opacity = '0';
+          fadeOverlay.style.pointerEvents = 'none';
+          isTransitioningRef.current = false;
         }
-      },
-      undefined,
-      (error) => {
-        console.error('[ThreejsViewer] Failed to load texture:', scene.url, error);
-        // Fade out on error too
-        fadeOverlay.style.opacity = '0';
-        fadeOverlay.style.pointerEvents = 'none';
-      }
-    );
+      );
+    }, FADE_TO_BLACK_MS);
   };
 
   const clearHotspots = () => {
@@ -530,6 +567,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     if (!canvas) return;
 
     const handleMouseDown = (e: MouseEvent) => {
+      if (isTransitioningRef.current) return;
       inputRef.current.isMouseDown = true;
       inputRef.current.lastMouseX = e.clientX;
       inputRef.current.lastMouseY = e.clientY;
@@ -538,6 +576,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!rendererRef.current) return;
+      if (isTransitioningRef.current) return;
       
       const rect = rendererRef.current.domElement.getBoundingClientRect();
       mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -560,12 +599,14 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const handleMouseUp = () => {
+      if (isTransitioningRef.current) return;
       inputRef.current.isMouseDown = false;
       canvas.style.cursor = 'grab';
     };
 
     const handleClick = (e: MouseEvent) => {
       // Trigger hotspot clicks from anywhere on screen
+      if (isTransitioningRef.current) return;
       console.log('[ThreejsViewer] Click event detected at', e.clientX, e.clientY);
       checkHotspotIntersection(e.clientX, e.clientY);
     };
@@ -603,6 +644,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
+      if (isTransitioningRef.current) return;
       touchStartTime = Date.now();
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
@@ -616,6 +658,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!inputRef.current.isTouching || e.touches.length === 0) return;
+      if (isTransitioningRef.current) return;
       e.preventDefault();
 
       const currentX = e.touches[0].clientX;
@@ -635,6 +678,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
+      if (isTransitioningRef.current) return;
       const touchDuration = Date.now() - touchStartTime;
       const touchDistance = Math.hypot(
         e.changedTouches[0].clientX - touchStartX,
