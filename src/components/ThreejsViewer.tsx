@@ -30,6 +30,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const textureLoaderRef = useRef<THREE.TextureLoader>(new THREE.TextureLoader());
+  const hotspotTooltipRef = useRef<HTMLDivElement>(null);
 
   const modeManager = useModeManager();
 
@@ -54,6 +55,8 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     deltaTime: 0,
     lastTime: Date.now(),
   });
+
+  const hoveredHotspotRef = useRef<THREE.Object3D | null>(null);
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -145,10 +148,30 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         }
         
         // Highlight hovered hotspot
+        let newHoveredHotspot: THREE.Object3D | null = null;
         for (const intersection of intersects) {
           const mesh = intersection.object as HotspotMesh;
           if (mesh.userData?.isHotspot && mesh.userData?.sprite) {
             mesh.userData.isHovered = true;
+            newHoveredHotspot = mesh;
+            
+            // Play hover sound when hovering a new hotspot
+            if (hoveredHotspotRef.current !== mesh) {
+              const hoverSound = new Audio('/media/hover.mp3');
+              hoverSound.volume = 0.3;
+              hoverSound.play().catch(() => {});
+
+              // Show destination label tooltip
+              const tooltipEl = hotspotTooltipRef.current;
+              if (tooltipEl) {
+                const targetTitle =
+                  scenes.find((s) => s.id === mesh.userData.targetSceneId)?.title ??
+                  mesh.userData.targetSceneId;
+                tooltipEl.textContent = targetTitle;
+                tooltipEl.style.display = 'block';
+              }
+            }
+            
             const originalScale = mesh.userData.originalScale!;
             const hoverScale = {
               x: originalScale.x * 1.4,
@@ -160,10 +183,36 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
             break;
           }
         }
+
+        // Position tooltip above hovered hotspot icon
+        if (newHoveredHotspot && cameraRef.current && rendererRef.current) {
+          const tooltipEl = hotspotTooltipRef.current;
+          if (tooltipEl) {
+            const worldPos = newHoveredHotspot.getWorldPosition(new THREE.Vector3());
+            const projected = worldPos.project(cameraRef.current);
+            const x = (projected.x * 0.5 + 0.5) * rect.width + rect.left;
+            const y = (-projected.y * 0.5 + 0.5) * rect.height + rect.top;
+
+            const verticalOffsetPx = 50; // slightly lower
+            const left = Math.max(8, Math.min(window.innerWidth - 8, x));
+            const top = Math.max(8, Math.min(window.innerHeight - 8, y - verticalOffsetPx));
+            tooltipEl.style.left = `${left}px`;
+            tooltipEl.style.top = `${top}px`;
+            tooltipEl.style.transform = 'translate(-50%, -100%)';
+          }
+        }
+
+        hoveredHotspotRef.current = newHoveredHotspot;
         
         // Reset cursor if no hotspot hovered
         if (intersects.length === 0) {
           rendererRef.current.domElement.style.cursor = inputRef.current.isMouseDown ? 'grabbing' : 'grab';
+
+          // Hide tooltip when not hovering
+          const tooltipEl = hotspotTooltipRef.current;
+          if (tooltipEl) {
+            tooltipEl.style.display = 'none';
+          }
         }
       }
 
@@ -346,8 +395,8 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
           // Store sprite reference in the hit sphere for hover effects
           if (hotspotGroupRef.current) {
             for (const child of hotspotGroupRef.current.children) {
-              const mesh = child as HotspotMesh;
-              if (mesh.userData?.targetSceneId === targetSceneId && Math.abs(mesh.position.x - hitSphere.position.x) < 1 && Math.abs(mesh.position.y - hitSphere.position.y) < 1) {
+              const mesh = child as HotspotMesh & { position?: THREE.Vector3 };
+              if (mesh.userData?.targetSceneId === targetSceneId && mesh.position && Math.abs(mesh.position.x - hitSphere.position.x) < 1 && Math.abs(mesh.position.y - hitSphere.position.y) < 1) {
                 mesh.userData.sprite = sprite;
                 mesh.userData.originalScale = { x: originalScaleX, y: originalScaleY };
                 mesh.userData.animationTime = 0;
@@ -612,22 +661,50 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         touchAction: 'none',
       }}
     >
+      {/* Destination label tooltip (hovered hotspot) */}
+      <div
+        ref={hotspotTooltipRef}
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          display: 'none',
+          pointerEvents: 'none',
+          zIndex: 1000,
+
+          background: 'rgba(242, 212, 194, 0.22)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: 4,
+          border: '2px solid #000',
+          borderTop: 'none',
+          borderLeft: 'none',
+          color: '#000',
+          fontFamily: 'monospace',
+          fontSize: 12,
+          fontWeight: 600,
+          padding: '8px 12px',
+          whiteSpace: 'nowrap',
+        }}
+      />
+
       {/* Logo */}
       <div
+        className="ui-logo"
         style={{
-          position: 'absolute',
-          top: 20,
+          position: 'fixed',
+          top: '-24px',
           left: '50%',
           transform: 'translateX(-50%)',
-          zIndex: 100,
+          zIndex: 300,
           pointerEvents: 'none',
         }}
       >
         <img
           src="/ui/kit.png"
           alt="Kit Logo"
+          className="ui-logo-img"
           style={{
-            height: '120px',
+            height: '171px',
             width: 'auto',
             opacity: 0.8,
           }}
@@ -691,15 +768,18 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 150,
-          background: 'rgba(0, 0, 0, 0.6)',
+          background: 'rgba(242, 212, 194, 0.22)',
           backdropFilter: 'blur(10px)',
           padding: '10px 20px',
-          borderRadius: 8,
-          color: '#fff',
+          borderRadius: 4,
+          color: '#000',
           fontSize: 14,
           fontWeight: 600,
-          border: '1px solid rgba(255, 255, 255, 0.2)',
+          border: '2px solid #000',
+          borderTop: 'none',
+          borderLeft: 'none',
           pointerEvents: 'none',
+          fontFamily: 'monospace',
         }}
       >
         {currentTitle}

@@ -5,12 +5,35 @@ import { SceneDef } from '../data/scenes';
 
 export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const sceneMountRef = useRef<HTMLDivElement>(null);
   const modeManager = useModeManager();
   const sceneRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const positionTooltipAboveObject = (object3D: THREE.Object3D) => {
+    const aScene = sceneRef.current;
+    const tooltip = document.getElementById('hotspot-tooltip');
+    if (!aScene?.camera || !aScene?.renderer || !tooltip) return;
+
+    const rect = aScene.renderer.domElement.getBoundingClientRect();
+    const worldPos = object3D.getWorldPosition(new THREE.Vector3());
+    const projected = worldPos.project(aScene.camera);
+
+    const x = (projected.x * 0.5 + 0.5) * rect.width + rect.left;
+    const y = (-projected.y * 0.5 + 0.5) * rect.height + rect.top;
+
+    // Place tooltip above the icon
+    const verticalOffsetPx = 50; // slightly lower
+    const left = Math.max(8, Math.min(window.innerWidth - 8, x));
+    const top = Math.max(8, Math.min(window.innerHeight - 8, y - verticalOffsetPx));
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.transform = 'translate(-50%, -100%)';
+  };
+
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!sceneMountRef.current) return;
 
     // Initialize A-Frame if not already loaded
     const initAFrame = async () => {
@@ -29,13 +52,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     const setupScene = async () => {
       await initAFrame();
 
-      if (!containerRef.current) return;
+      if (!sceneMountRef.current) return;
 
-      // Create fade overlay for smooth transitions
-      let fadeOverlay = document.getElementById('gyro-fade-transition');
+      // Get or create fade overlay (accessible to all nested functions)
+      let fadeOverlay = document.getElementById('fade-overlay-gyro');
       if (!fadeOverlay) {
         fadeOverlay = document.createElement('div');
-        fadeOverlay.id = 'gyro-fade-transition';
+        fadeOverlay.id = 'fade-overlay-gyro';
         fadeOverlay.style.cssText = `
           position: fixed;
           top: 0;
@@ -43,9 +66,9 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           right: 0;
           bottom: 0;
           background: #000000;
-          z-index: 997;
+          z-index: 998;
           opacity: 0;
-          transition: opacity 0.6s ease-in-out;
+          transition: opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
           pointer-events: none;
         `;
         document.body.appendChild(fadeOverlay);
@@ -57,7 +80,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       // For VR mode, use stereoscopic split-screen; for Gyro, use normal view
       if (isVRMode) {
         // VR split-screen stereo view (YouTube VR style)
-        containerRef.current.innerHTML = `
+        sceneMountRef.current.innerHTML = `
           <a-scene embedded embedded-vr inspector="url: https://aframe.io/releases/latest/aframe-inspector.js" vr-mode-ui="enabled: false">
             <a-assets>
               <img id="panorama" src="${scene?.url || ''}" />
@@ -72,8 +95,8 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         `;
       } else {
         // Gyro mode - normal single view with improved raycaster
-        containerRef.current.innerHTML = `
-          <a-scene embedded>
+        sceneMountRef.current.innerHTML = `
+          <a-scene embedded vr-mode-ui="enabled: false">
             <a-assets>
               <img id="panorama" src="${scene?.url || ''}" />
               <img id="arrow-icon" src="/ui/arrow.png" />
@@ -88,8 +111,156 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       }
 
       // Get the scene element and ensure it's ready
-      const aScene = containerRef.current.querySelector('a-scene') as any;
+      const aScene = sceneMountRef.current.querySelector('a-scene') as any;
       sceneRef.current = aScene;
+
+      // Define handleSceneLoaded inside setupScene to access fadeOverlay
+      const handleSceneLoaded = (aScene: any) => {
+        const camera = aScene.querySelector('#camera') as any;
+        if (!camera) return;
+
+        const currentScene = scenes[modeManager.currentSceneIndex];
+        console.log(`[AframeViewer] 🎬 Scene loaded callback for: ${currentScene?.id}`);
+
+        // Show loading indicator (but not for A-Frame Gyro - instant transitions)
+        const isGyroMode = modeManager.mode === 'gyro';
+        // Never set isLoading for Gyro mode - keep it false
+        if (!isGyroMode) {
+          setIsLoading(true);
+        }
+        console.log('[AframeViewer] Starting to load scene panorama');
+
+        // Wait for panorama image to fully load before showing hotspots
+        const panoramaImg = aScene.querySelector('#panorama') as any;
+        const sky = aScene.querySelector('#app-sky') as any;
+        const hotspotContainer = aScene.querySelector('#hotspots') as any;
+
+        console.log(`[AframeViewer] Scene elements - panorama: ${!!panoramaImg}, sky: ${!!sky}, hotspots container: ${!!hotspotContainer}`);
+
+        if (panoramaImg && sky) {
+          // Monitor image load with better detection
+          let imageLoadAttempts = 0;
+          const maxAttempts = 100; // 10 seconds max wait (was 5)
+          
+          const checkImageLoaded = () => {
+            imageLoadAttempts++;
+            
+            // Log every 10 attempts to avoid spam
+            if (imageLoadAttempts % 10 === 0 || imageLoadAttempts === 1) {
+              console.log(`[AframeViewer] Image load check ${imageLoadAttempts}/${maxAttempts} for ${currentScene?.id}: complete=${panoramaImg.complete}, height=${panoramaImg.naturalHeight}`);
+            }
+            
+            if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
+              console.log(`[AframeViewer] ✅ Image loaded after ${imageLoadAttempts} attempts`);
+              
+              // Fade in from black when image loads
+              if (fadeOverlay) {
+                fadeOverlay.style.opacity = '0';
+              }
+              
+              // Set sky to fully opaque immediately - no fade animation to avoid blue flash
+              sky.setAttribute('opacity', '1');
+              
+              // Add slight camera rotation transition for immersion
+              camera.setAttribute('animation', 'property: rotation; from: 0 0 0; to: 0 0 0; dur: 300; easing: easeOutQuad');
+              
+              // Wait a bit more to ensure sky texture is applied
+              setTimeout(() => {
+                console.log(`[AframeViewer] 🔧 Adding hotspots for ${currentScene?.id} (${currentScene?.hotSpots?.length || 0} hotspots)`);
+                // Image is loaded, now add hotspots
+                addHotspots(aScene);
+                // Only turn off loading for non-Gyro modes
+                if (!isGyroMode) {
+                  setIsLoading(false);
+                }
+
+                // Setup gyro or VR mode (already determined isGyroMode earlier)
+                if (isGyroMode) {
+                  enableGyroMode(camera, aScene);
+                } else if (modeManager.mode === 'vr') {
+                  enableVRMode(aScene, camera);
+                }
+
+                // Setup mobile click detection after hotspots are added
+                setTimeout(() => {
+                  setupMobileHotspotDetection(aScene);
+                }, 200);
+              }, 400);
+            } else if (imageLoadAttempts < maxAttempts) {
+              // Still loading, check again
+              setTimeout(checkImageLoaded, 100);
+            } else {
+              // Timeout - force add hotspots anyway
+              console.warn(`[AframeViewer] ⚠️ Image load timeout after ${maxAttempts} attempts, adding hotspots anyway for ${currentScene?.id}`);
+              addHotspots(aScene);
+              if (!isGyroMode) {
+                setIsLoading(false);
+              }
+
+              if (fadeOverlay) {
+                fadeOverlay.style.opacity = '0';
+                fadeOverlay.style.pointerEvents = 'none';
+              }
+
+              if (isGyroMode) {
+                enableGyroMode(camera, aScene);
+              } else if (modeManager.mode === 'vr') {
+                enableVRMode(aScene, camera);
+              }
+
+              setTimeout(() => {
+                setupMobileHotspotDetection(aScene);
+              }, 200);
+            }
+          };
+
+          // Start checking if image is loaded (add small delay to let A-Frame initialize)
+          setTimeout(() => {
+            if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
+              console.log(`[AframeViewer] Image cached for ${currentScene?.id}`);
+              checkImageLoaded();
+            } else {
+              console.log(`[AframeViewer] Starting image load poll for ${currentScene?.id}`);
+              panoramaImg.onload = () => {
+                console.log(`[AframeViewer] onload event for ${currentScene?.id}`);
+                checkImageLoaded();
+              };
+              panoramaImg.onerror = () => {
+                console.error(`[AframeViewer] ❌ Image load error for ${currentScene?.id}`);
+                setIsLoading(false);
+                if (fadeOverlay) {
+                  fadeOverlay.style.opacity = '0';
+                  fadeOverlay.style.pointerEvents = 'none';
+                }
+              };
+              // Also start polling in case onload doesn't fire
+              setTimeout(checkImageLoaded, 100);
+            }
+          }, 100);
+        } else {
+          // Fallback if elements not found
+          console.warn('[AframeViewer] ⚠️ Panorama or sky element not found!');
+          addHotspots(aScene);
+          if (!isGyroMode) {
+            setIsLoading(false);
+          }
+
+          if (fadeOverlay) {
+            fadeOverlay.style.opacity = '0';
+            fadeOverlay.style.pointerEvents = 'none';
+          }
+
+          if (isGyroMode) {
+            enableGyroMode(camera, aScene);
+          } else if (modeManager.mode === 'vr') {
+            enableVRMode(aScene, camera);
+          }
+
+          setTimeout(() => {
+            setupMobileHotspotDetection(aScene);
+          }, 200);
+        }
+      };
 
       // Wait for A-Frame to load
       if (aScene.hasLoaded) {
@@ -101,161 +272,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       }
     };
 
-    const handleSceneLoaded = (aScene: any) => {
-      const camera = aScene.querySelector('#camera') as any;
-      if (!camera) return;
-
-      const currentScene = scenes[modeManager.currentSceneIndex];
-      console.log(`[AframeViewer] 🎬 Scene loaded callback for: ${currentScene?.id}`);
-
-      // Show loading indicator (but not for A-Frame Gyro - instant transitions)
-      const isGyroMode = modeManager.mode === 'gyro';
-      // Never set isLoading for Gyro mode - keep it false
-      if (!isGyroMode) {
-        setIsLoading(true);
-      }
-      console.log('[AframeViewer] Starting to load scene panorama');
-
-      // Wait for panorama image to fully load before showing hotspots
-      const panoramaImg = aScene.querySelector('#panorama') as any;
-      const sky = aScene.querySelector('#app-sky') as any;
-      const hotspotContainer = aScene.querySelector('#hotspots') as any;
-
-      console.log(`[AframeViewer] Scene elements - panorama: ${!!panoramaImg}, sky: ${!!sky}, hotspots container: ${!!hotspotContainer}`);
-
-      if (panoramaImg && sky) {
-        // Monitor image load with better detection
-        let imageLoadAttempts = 0;
-        const maxAttempts = 100; // 10 seconds max wait (was 5)
-        
-        const checkImageLoaded = () => {
-          imageLoadAttempts++;
-          
-          // Log every 10 attempts to avoid spam
-          if (imageLoadAttempts % 10 === 0 || imageLoadAttempts === 1) {
-            console.log(`[AframeViewer] Image load check ${imageLoadAttempts}/${maxAttempts} for ${currentScene?.id}: complete=${panoramaImg.complete}, height=${panoramaImg.naturalHeight}`);
-          }
-          
-          if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
-            console.log(`[AframeViewer] ✅ Image loaded after ${imageLoadAttempts} attempts`);
-            
-            // Set sky to fully opaque immediately - no fade animation to avoid blue flash
-            sky.setAttribute('opacity', '1');
-            
-            // Add slight camera rotation transition for immersion
-            camera.setAttribute('animation', 'property: rotation; from: 0 0 0; to: 0 0 0; dur: 300; easing: easeOutQuad');
-            
-            // Wait a bit more to ensure sky texture is applied
-            setTimeout(() => {
-              console.log(`[AframeViewer] 🔧 Adding hotspots for ${currentScene?.id} (${currentScene?.hotSpots?.length || 0} hotspots)`);
-              // Image is loaded, now add hotspots
-              addHotspots(aScene);
-              // Only turn off loading for non-Gyro modes
-              if (!isGyroMode) {
-                setIsLoading(false);
-              }
-
-              // Reset fade overlay to transparent after scene loads (ready for next transition)
-              setTimeout(() => {
-                const fadeOverlay = document.getElementById('gyro-fade-transition') as HTMLDivElement;
-                if (fadeOverlay) {
-                  fadeOverlay.style.opacity = '0';
-                }
-              }, 50);
-
-              // Setup gyro or VR mode (already determined isGyroMode earlier)
-              if (isGyroMode) {
-                enableGyroMode(camera, aScene);
-              } else if (modeManager.mode === 'vr') {
-                enableVRMode(aScene, camera);
-              }
-
-              // Setup mobile click detection after hotspots are added
-              setTimeout(() => {
-                setupMobileHotspotDetection(aScene);
-              }, 200);
-            }, 400);
-          } else if (imageLoadAttempts < maxAttempts) {
-            // Still loading, check again
-            setTimeout(checkImageLoaded, 100);
-          } else {
-            // Timeout - force add hotspots anyway
-            console.warn(`[AframeViewer] ⚠️ Image load timeout after ${maxAttempts} attempts, adding hotspots anyway for ${currentScene?.id}`);
-            addHotspots(aScene);
-            if (!isGyroMode) {
-              setIsLoading(false);
-            }
-
-            if (fadeOverlay) {
-              fadeOverlay.style.opacity = '0';
-              fadeOverlay.style.pointerEvents = 'none';
-            }
-
-            if (isGyroMode) {
-              enableGyroMode(camera, aScene);
-            } else if (modeManager.mode === 'vr') {
-              enableVRMode(aScene, camera);
-            }
-
-            setTimeout(() => {
-              setupMobileHotspotDetection(aScene);
-            }, 200);
-          }
-        };
-
-        // Start checking if image is loaded (add small delay to let A-Frame initialize)
-        setTimeout(() => {
-          if (panoramaImg.complete && panoramaImg.naturalHeight > 0) {
-            console.log(`[AframeViewer] Image cached for ${currentScene?.id}`);
-            checkImageLoaded();
-          } else {
-            console.log(`[AframeViewer] Starting image load poll for ${currentScene?.id}`);
-            panoramaImg.onload = () => {
-              console.log(`[AframeViewer] onload event for ${currentScene?.id}`);
-              checkImageLoaded();
-            };
-            panoramaImg.onerror = () => {
-              console.error(`[AframeViewer] ❌ Image load error for ${currentScene?.id}`);
-              setIsLoading(false);
-              if (fadeOverlay) {
-                fadeOverlay.style.opacity = '0';
-                fadeOverlay.style.pointerEvents = 'none';
-              }
-            };
-            // Also start polling in case onload doesn't fire
-            setTimeout(checkImageLoaded, 100);
-          }
-        }, 100);
-      } else {
-        // Fallback if elements not found
-        console.warn('[AframeViewer] ⚠️ Panorama or sky element not found!');
-        addHotspots(aScene);
-        if (!isGyroMode) {
-          setIsLoading(false);
-        }
-
-        if (fadeOverlay) {
-          fadeOverlay.style.opacity = '0';
-          fadeOverlay.style.pointerEvents = 'none';
-        }
-
-        if (isGyroMode) {
-          enableGyroMode(camera, aScene);
-        } else if (modeManager.mode === 'vr') {
-          enableVRMode(aScene, camera);
-        }
-
-        setTimeout(() => {
-          setupMobileHotspotDetection(aScene);
-        }, 200);
-      }
-    };
-
     setupScene();
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+      if (sceneMountRef.current) {
+        sceneMountRef.current.innerHTML = '';
       }
     };
   }, [scenes, modeManager.currentSceneIndex, modeManager.mode]);
@@ -365,38 +386,77 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     const handleHotspotClick = () => {
       console.log('[AframeViewer] Hotspot clicked, target:', targetSceneId);
       
+      // Fade to black before scene transition
+      const fadeOverlay = document.getElementById('fade-overlay-gyro');
+      if (fadeOverlay) {
+        fadeOverlay.style.opacity = '1';
+      }
+      
       const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
       if (targetIdx >= 0) {
-        // Fade to black
-        const fadeOverlay = document.getElementById('gyro-fade-transition') as HTMLDivElement;
-        if (fadeOverlay) {
-          fadeOverlay.style.opacity = '1';
-        }
-        
-        // Change scene and fade back
+        // Wait for fade-out to complete, then change scene
         setTimeout(() => {
           modeManager.setCurrentScene(targetIdx);
-          
-          // Fade in from black after scene loads
-          setTimeout(() => {
-            if (fadeOverlay) {
-              fadeOverlay.style.opacity = '0';
-            }
-          }, 100);
-        }, 150);
+        }, 250);
       }
     };
 
     // Handle both click and intersection for raycaster
     hotspot.addEventListener('click', handleHotspotClick);
     
-    // Handle raycaster intersection (fuse event)
-    hotspot.addEventListener('raycaster-intersection', () => {
-      console.log('[AframeViewer] Raycaster intersected hotspot:', targetSceneId);
+    // Handle hover to show tooltip
+    const targetScene = scenes.find((s) => s.id === targetSceneId);
+    const tooltipText = targetScene?.title || targetSceneId || 'Navigate';
+    
+    // Store tooltip text on the hotspot element for later retrieval
+    hotspot.setAttribute('data-tooltip-text', tooltipText);
+
+    let tooltipRafId: number | null = null;
+    const startTooltipTracking = () => {
+      if (tooltipRafId != null) return;
+      const tick = () => {
+        if ((hotspot as any).object3D) {
+          positionTooltipAboveObject((hotspot as any).object3D);
+        }
+        tooltipRafId = requestAnimationFrame(tick);
+      };
+      tooltipRafId = requestAnimationFrame(tick);
+    };
+    const stopTooltipTracking = () => {
+      if (tooltipRafId != null) {
+        cancelAnimationFrame(tooltipRafId);
+        tooltipRafId = null;
+      }
+    };
+    
+    // Handle raycaster-intersected event for hover feedback and tooltip
+    hotspot.addEventListener('raycaster-intersected', () => {
+      console.log('[AframeViewer] 🎯 Raycaster intersected hotspot:', targetSceneId, 'tooltip:', tooltipText);
+      
+      // Show tooltip
+      const tooltip = document.getElementById('hotspot-tooltip');
+      console.log('[AframeViewer] Tooltip element found:', !!tooltip);
+      if (tooltip) {
+        tooltip.textContent = tooltipText;
+        tooltip.style.display = 'block';
+        console.log('[AframeViewer] Tooltip text set to:', tooltipText);
+        if ((hotspot as any).object3D) {
+          positionTooltipAboveObject((hotspot as any).object3D);
+        }
+        startTooltipTracking();
+      }
     });
 
-    hotspot.addEventListener('raycaster-intersection-cleared', () => {
+    hotspot.addEventListener('raycaster-intersected-cleared', () => {
       console.log('[AframeViewer] Raycaster cleared from hotspot:', targetSceneId);
+      
+      // Hide tooltip
+      const tooltip = document.getElementById('hotspot-tooltip');
+      if (tooltip) {
+        tooltip.style.display = 'none';
+      }
+
+      stopTooltipTracking();
     });
 
     // CONSTRAINED BILLBOARD: Update rotation to face camera but limit extreme angles
@@ -448,6 +508,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
     // Handle hover with smooth transition
     hotspot.addEventListener('mouseenter', () => {
+        // Play hover sound
+        const hoverSound = new Audio('/media/hover.mp3');
+        hoverSound.volume = 0.3;
+        hoverSound.play().catch(() => {});
+        
         hotspot.setAttribute('scale', '2.3 2.3 2.3');
         hotspot.setAttribute('animation__hover', 'property: scale; to: 2.5 2.5 2.5; dur: 200');
     });
@@ -497,43 +562,83 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       
       if (hotspots.length === 0) {
         console.warn('[AframeViewer] ⚠ WARNING: No hotspots found in DOM!');
-        // Try to find them by checking innerHTML
-        if (hotspotContainer) {
-          console.log('[AframeViewer] Hotspot container HTML:', hotspotContainer.innerHTML.substring(0, 500));
-        }
         return;
       }
 
-      // Setup event listeners on each hotspot
-      hotspots.forEach((hotspot: any, index: number) => {
-        const targetSceneId = hotspot.getAttribute('data-target-scene-id');
-        const pos = hotspot.getAttribute('position');
-        console.log(`[AframeViewer] Hotspot ${index}: target=${targetSceneId}, position=${pos}, visible=${hotspot.getAttribute('visible')}`);
+      // Get cursor element
+      const cursor = aScene.querySelector('#cursor');
+      if (!cursor) {
+        console.warn('[AframeViewer] Cursor not found');
+        return;
+      }
 
+      console.log('[AframeViewer] ✓ Cursor element found, setting up raycaster tracking');
+
+      // Track intersected elements using cursor's raycaster
+      let lastIntersected = null;
+      
+      // Use A-Frame's tick function to continuously check raycaster intersections
+      aScene.addEventListener('tick', () => {
+        const raycaster = cursor.components?.raycaster;
+        if (!raycaster || !raycaster.raycaster) return;
+
+        // Check intersections manually
+        const intersection = raycaster.getIntersection(hotspots[0]?.object3D?.parent);
+        if (intersection) {
+          // Find which hotspot we're looking at
+          hotspots.forEach((hotspot: any) => {
+            const hotspotObj = hotspot.object3D;
+            if (hotspotObj) {
+              // Check if this hotspot is in the intersection
+              const intersectedObjects = raycaster.raycaster.intersectObject(hotspotObj, true);
+              if (intersectedObjects.length > 0 && lastIntersected !== hotspot) {
+                // Hovering over this hotspot
+                lastIntersected = hotspot;
+                const targetSceneId = hotspot.getAttribute('data-target-scene-id');
+                const tooltipText = hotspot.getAttribute('data-tooltip-text');
+                console.log('[AframeViewer] 🎯 Hovering over hotspot:', targetSceneId, tooltipText);
+                
+                const tooltip = document.getElementById('hotspot-tooltip');
+                if (tooltip) {
+                  tooltip.textContent = tooltipText || 'Navigate';
+                  tooltip.style.display = 'block';
+                }
+              }
+            }
+          });
+        } else if (lastIntersected) {
+          // Not hovering over anything anymore
+          console.log('[AframeViewer] No longer hovering');
+          lastIntersected = null;
+          const tooltip = document.getElementById('hotspot-tooltip');
+          if (tooltip) {
+            tooltip.style.display = 'none';
+          }
+        }
+      });
+
+      // Setup click handlers
+      hotspots.forEach((hotspot: any) => {
+        const targetSceneId = hotspot.getAttribute('data-target-scene-id');
+        
         const handleHotspotClick = () => {
           console.log('[AframeViewer] Hotspot clicked:', targetSceneId);
+          
+          const fadeOverlay = document.getElementById('fade-overlay-gyro');
+          if (fadeOverlay) {
+            fadeOverlay.style.opacity = '1';
+          }
+          
           const targetIdx = scenes.findIndex((s) => s.id === targetSceneId);
           if (targetIdx >= 0) {
-            modeManager.setCurrentScene(targetIdx);
+            setTimeout(() => {
+              modeManager.setCurrentScene(targetIdx);
+            }, 250);
           }
         };
 
-        // Add click handler directly
         hotspot.addEventListener('click', handleHotspotClick);
-
-        // Add cursor fuse event (for A-Frame raycaster)
         hotspot.addEventListener('fuse', handleHotspotClick);
-        
-        // Raycaster intersection events for hover feedback
-        hotspot.addEventListener('raycaster-intersected', () => {
-          console.log('[AframeViewer] Raycaster intersected:', targetSceneId);
-          hotspot.setAttribute('scale', '1.4 1.4 1.4');
-        });
-
-        hotspot.addEventListener('raycaster-intersected-cleared', () => {
-          console.log('[AframeViewer] Raycaster cleared:', targetSceneId);
-          hotspot.setAttribute('scale', '1.2 1.2 1.2');
-        });
       });
 
       // Force render update
@@ -691,6 +796,68 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         backgroundColor: '#000000',
       }}
     >
+      <style>{`
+        .a-enter-vr, .a-enter-vr-button, .a-enter-ar-button {
+          display: none !important;
+        }
+      `}</style>
+
+      <div
+        ref={sceneMountRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+        }}
+      />
+
+      {/* Tooltip for hotspot hover */}
+      <div
+        id="hotspot-tooltip"
+        style={{
+          position: 'fixed',
+          background: 'rgba(242, 212, 194, 0.22)',
+          color: '#000',
+          padding: '8px 12px',
+          borderRadius: 4,
+          fontSize: 12,
+          fontWeight: 600,
+          pointerEvents: 'none',
+          zIndex: 1000,
+          display: 'none',
+          whiteSpace: 'nowrap',
+          backdropFilter: 'blur(10px)',
+          border: '2px solid #000',
+          borderTop: 'none',
+          borderLeft: 'none',
+          boxShadow: 'none',
+          fontFamily: 'monospace',
+        }}
+      />
+
+      {/* Logo */}
+      <div
+        className="ui-logo"
+        style={{
+          position: 'fixed',
+          top: '-24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          pointerEvents: 'none',
+        }}
+      >
+        <img
+          src="/ui/kit.png"
+          alt="Kit Logo"
+          className="ui-logo-img"
+          style={{
+            height: '171px',
+            width: 'auto',
+            opacity: 0.8,
+          }}
+        />
+      </div>
+
       {/* Loading Overlay - only for non-Gyro modes */}
       {isLoading && modeManager.mode !== 'gyro' && (
         <div

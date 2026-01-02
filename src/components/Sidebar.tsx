@@ -6,22 +6,31 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { setCurrentScene } = useModeManager();
 
+  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_DARK = 'rgba(30, 30, 30, 1)';
+  const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
+  const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
+
   return (
     <>
       {/* Sidebar toggle button */}
       <button
+        className="ui-btn ui-top-btn ui-locations-btn"
         onClick={() => setSidebarOpen((v) => !v)}
+        aria-label={sidebarOpen ? 'Close locations' : 'Open locations'}
         style={{
           position: 'fixed',
           left: 16,
           top: 16,
           zIndex: 220,
           padding: '10px 14px',
-          borderRadius: 12,
-          background: 'rgba(255,255,255,0.1)',
+          borderRadius: 4,
+          background: GLASS_BG,
           backdropFilter: 'blur(10px)',
-          color: '#fff',
-          border: '1px solid rgba(255,255,255,0.2)',
+          color: UI_DARK,
+          border: `2px solid ${UI_ACCENT}`,
+          borderTop: 'none',
+          borderLeft: 'none',
           display: 'inline-flex',
           gap: 8,
           alignItems: 'center',
@@ -30,20 +39,27 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
           transition: 'all 0.3s ease',
           fontWeight: 500,
           fontSize: 13,
+          fontFamily: 'monospace',
+          minHeight: 38,
+          outline: 'none',
         }}
         onMouseEnter={(e) => {
-          const el = e.target as HTMLElement;
-          el.style.background = 'rgba(255,255,255,0.15)';
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG_HOVER;
           el.style.transform = 'scale(1.05)';
+          // Play hover sound
+          const hoverSound = new Audio('/media/hover.mp3');
+          hoverSound.volume = 0.3;
+          hoverSound.play().catch(() => {});
         }}
         onMouseLeave={(e) => {
-          const el = e.target as HTMLElement;
-          el.style.background = 'rgba(255,255,255,0.1)';
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG;
           el.style.transform = 'scale(1)';
         }}
       >
-        <span style={{ fontSize: 16 }}>≡</span>
-        <span>Locations</span>
+        <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
+        <span className="ui-btn-label">Locations</span>
       </button>
 
       {/* Sidebar Modal Dialog */}
@@ -53,18 +69,22 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
           left: 20,
           top: '50%',
           transform: 'translateY(-50%)',
-          width: 150,
+          width: 220,
           maxHeight: '41vh',
           overflow: 'hidden',
           transition: 'all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
           zIndex: 210,
-          background: sidebarOpen ? 'linear-gradient(180deg, #3B2F5C, #1E293B)' : 'transparent',
-          backdropFilter: sidebarOpen ? 'blur(20px) saturate(180%)' : 'none',
+          background: sidebarOpen
+            ? GLASS_BG
+            : 'transparent',
+          backdropFilter: sidebarOpen ? 'blur(10px)' : 'none',
           padding: sidebarOpen ? 10 : 0,
-          borderRadius: 20,
-          border: sidebarOpen ? '1px solid rgba(255,255,255,0.18)' : 'none',
+          borderRadius: 4,
+          border: sidebarOpen ? `2px solid ${UI_ACCENT}` : 'none',
+          borderTop: sidebarOpen ? 'none' : 'none',
+          borderLeft: sidebarOpen ? 'none' : 'none',
           pointerEvents: sidebarOpen ? 'auto' : 'none',
-          boxShadow: sidebarOpen ? '0 8px 32px rgba(31, 38, 135, 0.37)' : 'none',
+          boxShadow: 'none',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -72,19 +92,20 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
         {sidebarOpen && (
           <div
             style={{
-              color: '#e5e7eb',
+              color: UI_DARK,
               display: 'flex',
               flexDirection: 'column',
               height: '100%',
               minHeight: 0,
+              fontFamily: 'monospace',
             }}
           >
             <div
               style={{
                 fontWeight: 700,
-                fontSize: 9,
+                fontSize: 11,
                 marginBottom: 8,
-                color: '#ffffff',
+                color: UI_DARK,
                 flexShrink: 0,
                 letterSpacing: '-0.3px',
               }}
@@ -113,31 +134,35 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    padding: '5px 8px',
-                    borderRadius: 12,
-                    background: 'rgba(99, 146, 226, 0.15)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(99, 146, 226, 0.3)',
+                    padding: '7px 10px',
+                    borderRadius: 4,
+                    background: GLASS_BG,
+                    color: UI_DARK,
+                    border: `2px solid ${UI_ACCENT}`,
+                    borderTop: 'none',
+                    borderLeft: 'none',
                     cursor: 'pointer',
                     pointerEvents: 'auto',
                     fontWeight: 500,
-                    fontSize: 7,
+                    fontSize: 11,
                     transition: 'all 0.25s ease',
                     flexShrink: 0,
+                    fontFamily: 'monospace',
+                    outline: 'none',
                   }}
                   onMouseEnter={(e) => {
-                    const el = e.target as HTMLElement;
-                    el.style.background = 'rgba(99, 146, 226, 0.25)';
-                    el.style.border = '1px solid rgba(99, 146, 226, 0.45)';
-                    el.style.transform = 'translateX(2px)';
-                    el.style.boxShadow = '0 4px 12px rgba(99, 146, 226, 0.2)';
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.background = GLASS_BG_HOVER;
+                    el.style.transform = 'scale(1.03)';
+                    // Play hover sound
+                    const hoverSound = new Audio('/media/hover.mp3');
+                    hoverSound.volume = 0.3;
+                    hoverSound.play().catch(() => {});
                   }}
                   onMouseLeave={(e) => {
-                    const el = e.target as HTMLElement;
-                    el.style.background = 'rgba(99, 146, 226, 0.15)';
-                    el.style.border = '1px solid rgba(99, 146, 226, 0.3)';
-                    el.style.transform = 'translateX(0)';
-                    el.style.boxShadow = 'none';
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.background = GLASS_BG;
+                    el.style.transform = 'scale(1)';
                   }}
                 >
                   <span style={{ flex: 1, textAlign: 'left' }}>{s.title}</span>

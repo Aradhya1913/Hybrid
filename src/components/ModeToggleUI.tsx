@@ -6,6 +6,11 @@ export function ModeToggleUI() {
   const { mode, capabilities, switchMode } = useModeManager();
   const [permissionDenied, setPermissionDenied] = useState(false);
 
+  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_DARK = 'rgba(30, 30, 30, 1)';
+  const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
+  const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
+
   const handleGyroClick = async () => {
     if (mode === 'gyro') {
       switchMode('normal');
@@ -54,31 +59,49 @@ export function ModeToggleUI() {
       {/* Gyro Button */}
       {capabilities.hasGyroscope && (
         <button
+          className="ui-btn ui-top-btn ui-gyro-btn"
           onClick={handleGyroClick}
+          aria-label={mode === 'gyro' ? 'Disable gyro' : 'Enable gyro'}
           style={{
-            padding: '8px 12px',
-            borderRadius: 6,
-            background: mode === 'gyro' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            padding: '10px 14px',
+            borderRadius: 4,
+            background: GLASS_BG,
+            color: UI_DARK,
+            border: `2px solid ${UI_ACCENT}`,
+            borderTop: 'none',
+            borderLeft: 'none',
             cursor: 'pointer',
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: 500,
             backdropFilter: 'blur(10px)',
             transition: 'all 0.2s ease',
+            transform: 'scale(1)',
             pointerEvents: 'auto',
             whiteSpace: 'nowrap',
+            fontFamily: 'monospace',
+            minHeight: 38,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            outline: 'none',
           }}
           onMouseEnter={(e) => {
-            const el = e.target as HTMLElement;
-            el.style.background = mode === 'gyro' ? 'rgba(37, 99, 235, 0.9)' : 'rgba(255, 255, 255, 0.15)';
+            const el = e.currentTarget as HTMLButtonElement;
+            el.style.background = GLASS_BG_HOVER;
+            el.style.transform = 'scale(1.05)';
+            // Play hover sound
+            const hoverSound = new Audio('/media/hover.mp3');
+            hoverSound.volume = 0.3;
+            hoverSound.play().catch(() => {});
           }}
           onMouseLeave={(e) => {
-            const el = e.target as HTMLElement;
-            el.style.background = mode === 'gyro' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)';
+            const el = e.currentTarget as HTMLButtonElement;
+            el.style.background = GLASS_BG;
+            el.style.transform = 'scale(1)';
           }}
         >
-          {mode === 'gyro' ? '📱 Gyro Enabled' : '≡ Enable Gyro'}
+          <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
+          <span className="ui-btn-label">{mode === 'gyro' ? 'Gyro Enabled' : 'Enable Gyro'}</span>
         </button>
       )}
 

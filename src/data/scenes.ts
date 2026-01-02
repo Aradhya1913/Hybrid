@@ -83,7 +83,7 @@ const scenes: SceneDef[] = [
 
   { 
     id: 'spot5', 
-    title: 'Auditorim corner', 
+    title: 'Auditorium corner', 
     url: '/panos/spot5.jpg',
     hotSpots: [
       { yaw: 4, pitch: -10, targetSceneId: 'spot7', text: 'Playground' },
