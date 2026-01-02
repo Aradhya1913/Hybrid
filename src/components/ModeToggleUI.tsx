@@ -5,6 +5,7 @@ import { useVRDetection } from '../hooks/useVRDetection';
 export function ModeToggleUI() {
   const { mode, capabilities, switchMode } = useModeManager();
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const UI_ACCENT = 'rgba(215, 244, 71, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
@@ -14,6 +15,75 @@ export function ModeToggleUI() {
   // Keep in sync with the music button in App.tsx (48x48, bottom/right = 20)
   const MUSIC_BTN_SIZE = 48;
   const MUSIC_BTN_GAP = 12;
+
+  const requestFullscreen = async (elem: Element) => {
+    const anyElem = elem as any;
+    try {
+      if (anyElem.requestFullscreen) {
+        await anyElem.requestFullscreen();
+      } else if (anyElem.webkitRequestFullscreen) {
+        anyElem.webkitRequestFullscreen();
+      } else if (anyElem.mozRequestFullScreen) {
+        anyElem.mozRequestFullScreen();
+      } else if (anyElem.msRequestFullscreen) {
+        anyElem.msRequestFullscreen();
+      }
+    } catch {
+      // Ignore (not supported / blocked)
+    }
+  };
+
+  const exitFullscreen = async () => {
+    const anyDoc = document as any;
+    try {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (anyDoc.webkitExitFullscreen) {
+        anyDoc.webkitExitFullscreen();
+      } else if (anyDoc.mozCancelFullScreen) {
+        anyDoc.mozCancelFullScreen();
+      } else if (anyDoc.msExitFullscreen) {
+        anyDoc.msExitFullscreen();
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  const lockLandscape = async () => {
+    try {
+      if (screen.orientation && (screen.orientation as any).lock) {
+        await (screen.orientation as any).lock('landscape');
+      }
+    } catch {
+      // Ignore (not supported / requires fullscreen / blocked)
+    }
+  };
+
+  const unlockOrientation = () => {
+    try {
+      if (screen.orientation && (screen.orientation as any).unlock) {
+        (screen.orientation as any).unlock();
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleVRClick = () => {
+    if (mode === 'vr') {
+      // Prefer returning to gyro if available, otherwise normal (Three.js)
+      unlockOrientation();
+      void exitFullscreen();
+      switchMode(capabilities.hasGyroscope ? 'gyro' : 'normal');
+      return;
+    }
+
+    // Best-effort: fullscreen + lock orientation on user gesture
+    void requestFullscreen(document.documentElement);
+    void lockLandscape();
+    switchMode('vr');
+  };
 
   const handleGyroClick = async () => {
     if (mode === 'gyro') {
@@ -46,6 +116,14 @@ export function ModeToggleUI() {
     }
   };
 
+  const playHoverSound = () => {
+    const hoverSound = new Audio('/media/hover.mp3');
+    hoverSound.volume = 0.3;
+    hoverSound.play().catch(() => {});
+  };
+
+  const mainButtonLabel = mode === 'vr' ? 'VR' : mode === 'gyro' ? 'Gyro' : 'Modes';
+
   return (
     <div
       style={{
@@ -54,59 +132,161 @@ export function ModeToggleUI() {
         bottom: `calc(${20 + MUSIC_BTN_SIZE + MUSIC_BTN_GAP}px + env(safe-area-inset-bottom))`,
         zIndex: 300,
         display: 'flex',
-        gap: 10,
         flexDirection: 'column',
         alignItems: 'flex-end',
         maxWidth: 'calc(100vw - 40px)',
       }}
     >
-      {/* Gyro Button */}
-      {capabilities.hasGyroscope && (
-        <button
-          className="ui-btn ui-gyro-btn"
-          onClick={handleGyroClick}
-          aria-label={mode === 'gyro' ? 'Disable gyro' : 'Enable gyro'}
+      {/* Combined Modes Button */}
+      <button
+        className="ui-btn ui-mode-btn"
+        onClick={() => setIsMenuOpen((v) => !v)}
+        aria-label="Modes"
+        aria-expanded={isMenuOpen}
+        style={{
+          padding: '10px 14px',
+          borderRadius: 4,
+          background: GLASS_BG,
+          color: UI_DARK,
+          border: `2px solid ${UI_ACCENT}`,
+          borderTop: 'none',
+          borderLeft: 'none',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 500,
+          backdropFilter: 'blur(10px)',
+          transition: 'all 0.2s ease',
+          transform: 'scale(1)',
+          pointerEvents: 'auto',
+          whiteSpace: 'nowrap',
+          fontFamily: 'monospace',
+          minHeight: 38,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG_HOVER;
+          el.style.transform = 'scale(1.05)';
+          playHoverSound();
+        }}
+        onMouseLeave={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG;
+          el.style.transform = 'scale(1)';
+        }}
+      >
+        <span className="ui-btn-icon" style={{ fontSize: 16 }}>⌂</span>
+        <span className="ui-btn-label">{mainButtonLabel}</span>
+      </button>
+
+      {/* Menu */}
+      {isMenuOpen && (
+        <div
           style={{
-            padding: '10px 14px',
-            borderRadius: 4,
-            background: GLASS_BG,
-            color: UI_DARK,
-            border: `2px solid ${UI_ACCENT}`,
-            borderTop: 'none',
-            borderLeft: 'none',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 500,
-            backdropFilter: 'blur(10px)',
-            transition: 'all 0.2s ease',
-            transform: 'scale(1)',
-            pointerEvents: 'auto',
-            whiteSpace: 'nowrap',
-            fontFamily: 'monospace',
-            minHeight: 38,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            outline: 'none',
-          }}
-          onMouseEnter={(e) => {
-            const el = e.currentTarget as HTMLButtonElement;
-            el.style.background = GLASS_BG_HOVER;
-            el.style.transform = 'scale(1.05)';
-            // Play hover sound
-            const hoverSound = new Audio('/media/hover.mp3');
-            hoverSound.volume = 0.3;
-            hoverSound.play().catch(() => {});
-          }}
-          onMouseLeave={(e) => {
-            const el = e.currentTarget as HTMLButtonElement;
-            el.style.background = GLASS_BG;
-            el.style.transform = 'scale(1)';
+            marginTop: 10,
+            display: 'flex',
+            gap: 10,
+            flexDirection: 'column',
+            alignItems: 'flex-end',
           }}
         >
-          <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
-          <span className="ui-btn-label">{mode === 'gyro' ? 'Gyro Enabled' : 'Enable Gyro'}</span>
-        </button>
+          <button
+            className="ui-btn ui-vr-btn"
+            onClick={() => {
+              setIsMenuOpen(false);
+              handleVRClick();
+            }}
+            aria-label={mode === 'vr' ? 'Exit VR' : 'Enter VR'}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 4,
+              background: GLASS_BG,
+              color: UI_DARK,
+              border: `2px solid ${UI_ACCENT}`,
+              borderTop: 'none',
+              borderLeft: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              backdropFilter: 'blur(10px)',
+              transition: 'all 0.2s ease',
+              transform: 'scale(1)',
+              pointerEvents: 'auto',
+              whiteSpace: 'nowrap',
+              fontFamily: 'monospace',
+              minHeight: 38,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              outline: 'none',
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG_HOVER;
+              el.style.transform = 'scale(1.05)';
+              playHoverSound();
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG;
+              el.style.transform = 'scale(1)';
+            }}
+          >
+            <span className="ui-btn-icon" style={{ fontSize: 16 }}>⌂</span>
+            <span className="ui-btn-label">{mode === 'vr' ? 'Exit VR' : 'Enter VR'}</span>
+          </button>
+
+          {capabilities.hasGyroscope && (
+            <button
+              className="ui-btn ui-gyro-btn"
+              onClick={async () => {
+                setIsMenuOpen(false);
+                await handleGyroClick();
+              }}
+              aria-label={mode === 'gyro' ? 'Disable gyro' : 'Enable gyro'}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 4,
+                background: GLASS_BG,
+                color: UI_DARK,
+                border: `2px solid ${UI_ACCENT}`,
+                borderTop: 'none',
+                borderLeft: 'none',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 500,
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.2s ease',
+                transform: 'scale(1)',
+                pointerEvents: 'auto',
+                whiteSpace: 'nowrap',
+                fontFamily: 'monospace',
+                minHeight: 38,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = GLASS_BG_HOVER;
+                el.style.transform = 'scale(1.05)';
+                playHoverSound();
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = GLASS_BG;
+                el.style.transform = 'scale(1)';
+              }}
+            >
+              <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
+              <span className="ui-btn-label">{mode === 'gyro' ? 'Gyro Enabled' : 'Enable Gyro'}</span>
+            </button>
+          )}
+        </div>
       )}
 
       {/* Permission Error */}
@@ -121,6 +301,7 @@ export function ModeToggleUI() {
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 100, 100, 0.3)',
             textAlign: 'right',
+            marginTop: 10,
           }}
         >
           ⚠️ Permission denied

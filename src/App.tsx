@@ -170,6 +170,9 @@ function AppContent() {
             }}
             onMouseEnter={(e) => {
               (e.target as HTMLElement).style.textDecoration = 'underline';
+              const hoverSound = new Audio('/media/hover.mp3');
+              hoverSound.volume = 0.3;
+              hoverSound.play().catch(() => {});
             }}
             onMouseLeave={(e) => {
               (e.target as HTMLElement).style.textDecoration = 'none';
@@ -190,6 +193,9 @@ function AppContent() {
             }}
             onMouseEnter={(e) => {
               (e.target as HTMLElement).style.textDecoration = 'underline';
+              const hoverSound = new Audio('/media/hover.mp3');
+              hoverSound.volume = 0.3;
+              hoverSound.play().catch(() => {});
             }}
             onMouseLeave={(e) => {
               (e.target as HTMLElement).style.textDecoration = 'none';

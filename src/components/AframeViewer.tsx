@@ -10,6 +10,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const sceneRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const UI_ACCENT = 'rgba(215, 244, 71, 1)';
+  const UI_DARK = 'rgba(30, 30, 30, 1)';
+  const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
+  const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
+
   const positionTooltipAboveObject = (object3D: THREE.Object3D) => {
     const aScene = sceneRef.current;
     const tooltip = document.getElementById('hotspot-tooltip');
@@ -278,6 +283,10 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
       if (sceneMountRef.current) {
         sceneMountRef.current.innerHTML = '';
       }
+
+      // Remove VR-specific injected CSS
+      const existingStyle = document.getElementById('vr-stereo-style');
+      if (existingStyle) existingStyle.remove();
     };
   }, [scenes, modeManager.currentSceneIndex, modeManager.mode]);
 
@@ -689,24 +698,42 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     const renderer = aScene.renderer as THREE.WebGLRenderer;
     const canvas = renderer.domElement;
 
+    const getViewportSize = () => {
+      const vv = (window as any).visualViewport as VisualViewport | undefined;
+      const width = Math.round((vv?.width ?? window.innerWidth) || 0);
+      const height = Math.round((vv?.height ?? window.innerHeight) || 0);
+      return {
+        width: width > 0 ? width : window.innerWidth,
+        height: height > 0 ? height : window.innerHeight,
+      };
+    };
+
     // Apply split-screen stereo CSS
     const style = document.createElement('style');
     style.id = 'vr-stereo-style';
     style.textContent = `
-      body {
+      html, body {
         margin: 0;
         padding: 0;
         overflow: hidden;
+        width: 100%;
+        height: 100%;
       }
       
       a-scene {
+        position: fixed !important;
+        inset: 0 !important;
         width: 100vw !important;
         height: 100vh !important;
+        height: 100dvh !important;
       }
       
       canvas {
+        position: fixed !important;
+        inset: 0 !important;
         width: 100vw !important;
         height: 100vh !important;
+        height: 100dvh !important;
         display: block !important;
       }
     `;
@@ -726,8 +753,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         if (!THREE) return;
 
         // Create stereo effect for split-screen rendering
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+        let { width: viewportWidth, height: viewportHeight } = getViewportSize();
         
         // Store original render function
         const originalRender = renderer.render.bind(renderer);
@@ -736,17 +762,20 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         let frameCount = 0;
         renderer.render = function(scene: any, cam: any) {
           frameCount++;
+
+          // Keep viewport in sync (orientation changes can otherwise leave gaps)
+          ({ width: viewportWidth, height: viewportHeight } = getViewportSize());
           
           // Render left eye
-          renderer.setViewport(0, 0, width / 2, height);
-          renderer.setScissor(0, 0, width / 2, height);
+          renderer.setViewport(0, 0, viewportWidth / 2, viewportHeight);
+          renderer.setScissor(0, 0, viewportWidth / 2, viewportHeight);
           renderer.setScissorTest(true);
           cam.position.x = -0.032; // IPD offset for left eye
           originalRender(scene, cam);
           
           // Render right eye
-          renderer.setViewport(width / 2, 0, width / 2, height);
-          renderer.setScissor(width / 2, 0, width / 2, height);
+          renderer.setViewport(viewportWidth / 2, 0, viewportWidth / 2, viewportHeight);
+          renderer.setScissor(viewportWidth / 2, 0, viewportWidth / 2, viewportHeight);
           renderer.setScissorTest(true);
           cam.position.x = 0.032; // IPD offset for right eye
           originalRender(scene, cam);
@@ -754,32 +783,23 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           // Reset
           cam.position.x = 0;
           renderer.setScissorTest(false);
-          renderer.setViewport(0, 0, width, height);
+          renderer.setViewport(0, 0, viewportWidth, viewportHeight);
         };
 
         console.log('[AframeViewer] Stereo effect enabled');
 
         // Handle window resize
         const handleResize = () => {
-          const newWidth = window.innerWidth;
-          const newHeight = window.innerHeight;
+          const { width: newWidth, height: newHeight } = getViewportSize();
+          viewportWidth = newWidth;
+          viewportHeight = newHeight;
           renderer.setSize(newWidth, newHeight);
         };
         window.addEventListener('resize', handleResize);
+        (window as any).visualViewport?.addEventListener('resize', handleResize);
 
-        // Request fullscreen
-        try {
-          const elem = canvas as any;
-          if (elem.requestFullscreen) {
-            elem.requestFullscreen().catch(() => {});
-          } else if (elem.webkitRequestFullscreen) {
-            elem.webkitRequestFullscreen();
-          } else if (elem.mozRequestFullScreen) {
-            elem.mozRequestFullScreen();
-          }
-        } catch (e) {
-          console.log('[VR] Fullscreen not available');
-        }
+        // Initial size sync
+        handleResize();
       } catch (error) {
         console.error('[AframeViewer] Error enabling stereo:', error);
       }
@@ -809,6 +829,120 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           inset: 0,
         }}
       />
+
+      {/* VR Toggle (A-Frame) */}
+      <button
+        onClick={() => {
+          const requestFullscreen = async (elem: Element) => {
+            const anyElem = elem as any;
+            try {
+              if (anyElem.requestFullscreen) {
+                await anyElem.requestFullscreen();
+              } else if (anyElem.webkitRequestFullscreen) {
+                anyElem.webkitRequestFullscreen();
+              } else if (anyElem.mozRequestFullScreen) {
+                anyElem.mozRequestFullScreen();
+              } else if (anyElem.msRequestFullscreen) {
+                anyElem.msRequestFullscreen();
+              }
+            } catch {
+              // Ignore
+            }
+          };
+
+          const exitFullscreen = async () => {
+            const anyDoc = document as any;
+            try {
+              if (document.exitFullscreen) {
+                await document.exitFullscreen();
+              } else if (anyDoc.webkitExitFullscreen) {
+                anyDoc.webkitExitFullscreen();
+              } else if (anyDoc.mozCancelFullScreen) {
+                anyDoc.mozCancelFullScreen();
+              } else if (anyDoc.msExitFullscreen) {
+                anyDoc.msExitFullscreen();
+              }
+            } catch {
+              // Ignore
+            }
+          };
+
+          const lockLandscape = async () => {
+            try {
+              if (screen.orientation && (screen.orientation as any).lock) {
+                await (screen.orientation as any).lock('landscape');
+              }
+            } catch {
+              // Ignore
+            }
+          };
+
+          const unlockOrientation = () => {
+            try {
+              if (screen.orientation && (screen.orientation as any).unlock) {
+                (screen.orientation as any).unlock();
+              }
+            } catch {
+              // Ignore
+            }
+          };
+
+          if (modeManager.mode === 'vr') {
+            unlockOrientation();
+            void exitFullscreen();
+            modeManager.switchMode(modeManager.capabilities.hasGyroscope ? 'gyro' : 'normal');
+          } else {
+            // Best-effort: fullscreen + lock orientation on user gesture
+            void requestFullscreen(document.documentElement);
+            void lockLandscape();
+            modeManager.switchMode('vr');
+          }
+        }}
+        aria-label={modeManager.mode === 'vr' ? 'Exit VR' : 'Enter VR'}
+        style={{
+          position: 'fixed',
+          top: 'calc(20px + env(safe-area-inset-top))',
+          right: 'calc(20px + env(safe-area-inset-right))',
+          zIndex: 300,
+          padding: '10px 14px',
+          borderRadius: 4,
+          background: GLASS_BG,
+          color: UI_DARK,
+          border: `2px solid ${UI_ACCENT}`,
+          borderTop: 'none',
+          borderLeft: 'none',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 500,
+          backdropFilter: 'blur(10px)',
+          transition: 'all 0.2s ease',
+          transform: 'scale(1)',
+          pointerEvents: 'auto',
+          whiteSpace: 'nowrap',
+          fontFamily: 'monospace',
+          minHeight: 38,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG_HOVER;
+          el.style.transform = 'scale(1.05)';
+          const hoverSound = new Audio('/media/hover.mp3');
+          hoverSound.volume = 0.3;
+          hoverSound.play().catch(() => {});
+        }}
+        onMouseLeave={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = GLASS_BG;
+          el.style.transform = 'scale(1)';
+        }}
+      >
+        <span style={{ fontSize: 16 }}>⌂</span>
+        <span>{modeManager.mode === 'vr' ? 'Exit VR' : 'Enter VR'}</span>
+      </button>
 
       {/* Tooltip for hotspot hover */}
       <div

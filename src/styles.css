@@ -29,6 +29,25 @@ canvas {
 
 /* Mobile/touch: force icon-only square top buttons */
 @media (hover: none) and (pointer: coarse) {
+  /* Bottom-right combined mode button is icon-only square on mobile */
+  .ui-mode-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  .ui-mode-btn .ui-btn-label {
+    display: none !important;
+  }
+
+  .ui-mode-btn .ui-btn-icon {
+    font-size: 18px !important;
+    line-height: 1 !important;
+  }
+
   .ui-top-btn {
     top: calc(10px + env(safe-area-inset-top)) !important;
     width: 44px !important;
@@ -87,6 +106,24 @@ canvas {
 
 /* Small screens fallback (some devices report unusual pointer characteristics) */
 @media (max-width: 900px) {
+  .ui-mode-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  .ui-mode-btn .ui-btn-label {
+    display: none !important;
+  }
+
+  .ui-mode-btn .ui-btn-icon {
+    font-size: 18px !important;
+    line-height: 1 !important;
+  }
+
   .ui-top-btn {
     top: calc(10px + env(safe-area-inset-top)) !important;
     width: 44px !important;
