@@ -94,7 +94,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.NoToneMapping;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -286,7 +286,24 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const initialYaw = scene.initialView?.yaw ?? 0;
     const initialPitch = scene.initialView?.pitch ?? 0;
 
-    const FADE_TO_BLACK_MS = 1000;
+    // Reference behavior: krpano uses BLEND(1) (a 1s crossfade). Implement the same.
+    const BLEND_MS = 1000;
+
+    const clampPitch = (p: number) => Math.max(-85, Math.min(85, p));
+    const startYaw = stateRef.current.yaw;
+    const startPitch = stateRef.current.pitch;
+    const targetYaw = initialYaw;
+    const targetPitch = clampPitch(initialPitch);
+
+    const smoothstep = (t: number) => t * t * (3 - 2 * t);
+
+    // Hide any leftover fade overlay from older versions.
+    const oldOverlay = document.getElementById('fade-overlay-threejs');
+    if (oldOverlay) {
+      (oldOverlay as HTMLDivElement).style.transition = 'none';
+      (oldOverlay as HTMLDivElement).style.opacity = '0';
+      (oldOverlay as HTMLDivElement).style.pointerEvents = 'none';
+    }
 
     // Freeze input and motion during transitions to avoid any visible drift.
     isTransitioningRef.current = true;
@@ -295,97 +312,134 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     inputRef.current.touchVelocityX = 0;
     inputRef.current.touchVelocityY = 0;
 
-    // Show fade overlay for transition
-    let fadeOverlay = document.getElementById('fade-overlay-threejs');
-    if (!fadeOverlay) {
-      fadeOverlay = document.createElement('div');
-      fadeOverlay.id = 'fade-overlay-threejs';
-      fadeOverlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 1);
-        z-index: 998;
-        opacity: 0;
-        transition: opacity 1s ease-in-out;
-        pointer-events: none;
-      `;
-      document.body.appendChild(fadeOverlay);
-    } else {
-      // Ensure existing overlay is fully opaque black (older versions used 0.7 alpha).
-      fadeOverlay.style.background = 'rgba(0, 0, 0, 1)';
-    }
+    // Update UI early (matches the feel of krpano).
+    setCurrentTitle(scene.title);
+    clearHotspots();
 
-    // 1) Fade the CURRENT panorama to black over 1s.
-    fadeOverlay.style.pointerEvents = 'none';
-    fadeOverlay.style.transition = `opacity ${FADE_TO_BLACK_MS}ms ease-in-out`;
-    fadeOverlay.style.opacity = '0';
-    void (fadeOverlay as HTMLDivElement).offsetHeight;
-    fadeOverlay.style.opacity = '1';
+    // Begin image download immediately (helps deployed latency).
+    textureLoaderRef.current.load(
+      scene.url,
+      (texture) => {
+        if (sceneLoadIdRef.current !== loadId) return;
+        console.log(`[ThreejsViewer] Texture loaded for scene: ${scene.id}`);
 
-    // 2) Once fully black, apply orientation + start loading the NEXT panorama.
-    window.setTimeout(() => {
-      if (sceneLoadIdRef.current !== loadId) return;
-
-      // Now that the screen is black, it's safe to change view direction and UI.
-      stateRef.current.yaw = initialYaw;
-      stateRef.current.pitch = Math.max(-85, Math.min(85, initialPitch));
-      setCurrentTitle(scene.title);
-      clearHotspots();
-
-      textureLoaderRef.current.load(
-        scene.url,
-        (texture) => {
-          if (sceneLoadIdRef.current !== loadId) return;
-          console.log(`[ThreejsViewer] Texture loaded for scene: ${scene.id}`);
-          texture.colorSpace = THREE.SRGBColorSpace;
-          if (sphereRef.current && sphereRef.current.material instanceof THREE.MeshBasicMaterial) {
-            sphereRef.current.material.map = texture;
-            sphereRef.current.material.needsUpdate = true;
-
-            // Wait a frame for material update
-            setTimeout(() => {
-              if (sceneLoadIdRef.current !== loadId) return;
-              console.log(`[ThreejsViewer] Adding ${scene.hotSpots?.length || 0} hotspots`);
-
-              // Add hotspots AFTER texture is loaded
-              if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
-                scene.hotSpots.forEach((hotspot, idx) => {
-                  console.log(`[ThreejsViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`);
-                  addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
-                    size: 0.7,
-                    text: hotspot.text,
-                  });
-                });
-              } else {
-                console.log('[ThreejsViewer] No hotspots defined, adding fallback');
-                const nextIdx = (index + 1) % scenes.length;
-                addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
-              }
-
-              // 3) Reveal immediately once ready (no fade-in), then unfreeze input.
-              fadeOverlay.style.transition = 'none';
-              fadeOverlay.style.opacity = '0';
-              fadeOverlay.style.pointerEvents = 'none';
-              void (fadeOverlay as HTMLDivElement).offsetHeight;
-              fadeOverlay.style.transition = `opacity ${FADE_TO_BLACK_MS}ms ease-in-out`;
-
-              isTransitioningRef.current = false;
-            }, 50);
-          }
-        },
-        undefined,
-        (error) => {
-          console.error('[ThreejsViewer] Failed to load texture:', scene.url, error);
-          fadeOverlay.style.transition = 'none';
-          fadeOverlay.style.opacity = '0';
-          fadeOverlay.style.pointerEvents = 'none';
+        const baseSphere = sphereRef.current;
+        const baseMaterial = baseSphere?.material;
+        const threeScene = sceneRef.current;
+        if (!baseSphere || !(baseMaterial instanceof THREE.MeshBasicMaterial) || !threeScene) {
           isTransitioningRef.current = false;
+          return;
         }
-      );
-    }, FADE_TO_BLACK_MS);
+
+        texture.encoding = THREE.sRGBEncoding;
+
+        // Create an overlay sphere for the new pano and blend it in.
+        const blendMaterial = new THREE.MeshBasicMaterial({
+          side: THREE.BackSide,
+          toneMapped: false,
+          map: texture,
+          transparent: true,
+          opacity: 0,
+        });
+
+        const blendSphere = new THREE.Mesh(baseSphere.geometry, blendMaterial);
+        blendSphere.scale.copy(baseSphere.scale);
+        blendSphere.rotation.copy(baseSphere.rotation);
+        blendSphere.position.copy(baseSphere.position);
+        blendSphere.renderOrder = (baseSphere.renderOrder ?? 0) + 1;
+        threeScene.add(blendSphere);
+
+        baseMaterial.transparent = true;
+        baseMaterial.opacity = 1;
+
+        const startTime = performance.now();
+
+        const tick = (now: number) => {
+          if (sceneLoadIdRef.current !== loadId) {
+            // Transition was superseded; clean up and bail.
+            threeScene.remove(blendSphere);
+            blendMaterial.dispose();
+            baseMaterial.opacity = 1;
+            baseMaterial.transparent = false;
+            return;
+          }
+
+          const rawT = Math.min(1, Math.max(0, (now - startTime) / BLEND_MS));
+          const t = smoothstep(rawT);
+
+          // Crossfade.
+          blendMaterial.opacity = t;
+          baseMaterial.opacity = 1 - t;
+
+          // Smoothly move view to the new scene's initial orientation during the blend.
+          stateRef.current.yaw = startYaw + (targetYaw - startYaw) * t;
+          stateRef.current.pitch = clampPitch(startPitch + (targetPitch - startPitch) * t);
+
+          if (rawT < 1) {
+            requestAnimationFrame(tick);
+            return;
+          }
+
+          // Finalize: commit the new texture to the base sphere.
+          baseMaterial.map = texture;
+          baseMaterial.needsUpdate = true;
+          baseMaterial.opacity = 1;
+          baseMaterial.transparent = false;
+
+          threeScene.remove(blendSphere);
+          blendMaterial.dispose();
+
+          // Add hotspots after the blend completes.
+          console.log(`[ThreejsViewer] Adding ${scene.hotSpots?.length || 0} hotspots`);
+          if (Array.isArray(scene.hotSpots) && scene.hotSpots.length > 0) {
+            scene.hotSpots.forEach((hotspot, idx) => {
+              console.log(
+                `[ThreejsViewer] Adding hotspot ${idx}: yaw=${hotspot.yaw}, pitch=${hotspot.pitch}, target=${hotspot.targetSceneId}`
+              );
+              addHotspot(hotspot.yaw, hotspot.pitch, hotspot.targetSceneId, {
+                size: 0.7,
+                text: hotspot.text,
+              });
+            });
+          } else {
+            console.log('[ThreejsViewer] No hotspots defined, adding fallback');
+            const nextIdx = (index + 1) % scenes.length;
+            addHotspot(0, 0, scenes[nextIdx].id, { size: 0.6 });
+          }
+
+          isTransitioningRef.current = false;
+
+          // Prefetch likely next panoramas in the background.
+          const doPrefetch = () => {
+            if (sceneLoadIdRef.current !== loadId) return;
+            const targets = new Set<string>();
+            for (const hs of scene.hotSpots ?? []) {
+              if (hs?.targetSceneId) targets.add(hs.targetSceneId);
+            }
+            for (const id of targets) {
+              const s = scenes.find((x) => x.id === id);
+              if (!s?.url) continue;
+              const img = new Image();
+              img.decoding = 'async';
+              img.loading = 'eager';
+              img.src = s.url;
+            }
+          };
+
+          const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void) => void);
+          if (ric) ric(doPrefetch);
+          else setTimeout(doPrefetch, 0);
+        };
+
+        requestAnimationFrame(tick);
+      },
+      undefined,
+      (error) => {
+        if (sceneLoadIdRef.current !== loadId) return;
+        console.error('[ThreejsViewer] Failed to load texture:', scene.url, error);
+        isTransitioningRef.current = false;
+      }
+    );
   };
 
   const clearHotspots = () => {
@@ -423,7 +477,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
         arrowPath,
         (texture) => {
           // Ensure proper color space and filtering
-          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.encoding = THREE.sRGBEncoding;
           texture.magFilter = THREE.NearestFilter;
           texture.minFilter = THREE.NearestFilter;
           texture.generateMipmaps = false;
