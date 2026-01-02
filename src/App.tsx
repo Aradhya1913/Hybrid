@@ -11,6 +11,8 @@ function AppContent() {
   const { mode } = useModeManager()
   const bgMusicRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const userManuallyPausedRef = useRef(false)
+  const wasPlayingBeforeHideRef = useRef(false)
 
   const UI_NEUTRAL = 'rgba(231, 231, 231, 1)'
   const UI_ACCENT = 'rgba(0, 0, 0, 1)'
@@ -27,22 +29,85 @@ function AppContent() {
     bgMusicRef.current = bgMusic
 
     // Play on first user interaction (required by browsers)
-    const playMusic = () => {
-      bgMusic.play().then(() => {
-        setIsPlaying(true)
-      }).catch(() => {})
-      document.removeEventListener('click', playMusic)
-      document.removeEventListener('touchstart', playMusic)
+    const tryAutoPlay = () => {
+      if (userManuallyPausedRef.current) return
+      if (!bgMusicRef.current) return
+      if (!bgMusicRef.current.paused) return
+
+      bgMusicRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true)
+        })
+        .catch(() => {
+          // Keep listeners so the next interaction can retry.
+        })
     }
-    
-    document.addEventListener('click', playMusic)
-    document.addEventListener('touchstart', playMusic)
+
+    // Use capture so we still get the event even if a button stops propagation.
+    document.addEventListener('pointerdown', tryAutoPlay, true)
+    document.addEventListener('touchstart', tryAutoPlay, true)
+    document.addEventListener('click', tryAutoPlay, true)
+    document.addEventListener('keydown', tryAutoPlay, true)
+
+    const pauseForBackground = () => {
+      const audio = bgMusicRef.current
+      if (!audio) return
+
+      // Remember if it was playing so we can optionally resume.
+      wasPlayingBeforeHideRef.current = !audio.paused
+
+      if (!audio.paused) {
+        audio.pause()
+        setIsPlaying(false)
+      }
+    }
+
+    const maybeResumeFromBackground = () => {
+      const audio = bgMusicRef.current
+      if (!audio) return
+      if (userManuallyPausedRef.current) return
+      if (!wasPlayingBeforeHideRef.current) return
+
+      audio
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {
+          // If the browser blocks autoplay again, user interaction will unlock it.
+        })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) pauseForBackground()
+      else maybeResumeFromBackground()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    // iOS Safari (older) sometimes uses the prefixed event.
+    document.addEventListener('webkitvisibilitychange' as any, handleVisibilityChange)
+    window.addEventListener('blur', pauseForBackground)
+    window.addEventListener('focus', maybeResumeFromBackground)
+    window.addEventListener('pagehide', pauseForBackground)
+    // Mobile browsers can suspend pages without a full unload.
+    window.addEventListener('freeze' as any, pauseForBackground)
+    // Coming back from BFCache should try to resume (if it was playing).
+    window.addEventListener('pageshow', maybeResumeFromBackground)
 
     return () => {
       bgMusic.pause()
       bgMusic.src = ''
-      document.removeEventListener('click', playMusic)
-      document.removeEventListener('touchstart', playMusic)
+      document.removeEventListener('pointerdown', tryAutoPlay, true)
+      document.removeEventListener('touchstart', tryAutoPlay, true)
+      document.removeEventListener('click', tryAutoPlay, true)
+      document.removeEventListener('keydown', tryAutoPlay, true)
+
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('webkitvisibilitychange' as any, handleVisibilityChange)
+      window.removeEventListener('blur', pauseForBackground)
+      window.removeEventListener('focus', maybeResumeFromBackground)
+      window.removeEventListener('pagehide', pauseForBackground)
+      window.removeEventListener('freeze' as any, pauseForBackground)
+      window.removeEventListener('pageshow', maybeResumeFromBackground)
     }
   }, [])
 
@@ -67,7 +132,9 @@ function AppContent() {
             if (isPlaying) {
               bgMusicRef.current.pause();
               setIsPlaying(false);
+              userManuallyPausedRef.current = true;
             } else {
+              userManuallyPausedRef.current = false;
               bgMusicRef.current.play().then(() => {
                 setIsPlaying(true);
               }).catch(() => {});
