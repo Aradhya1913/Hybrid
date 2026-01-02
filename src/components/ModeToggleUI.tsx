@@ -11,6 +11,10 @@ export function ModeToggleUI() {
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
 
+  // Keep in sync with the music button in App.tsx (48x48, bottom/right = 20)
+  const MUSIC_BTN_SIZE = 48;
+  const MUSIC_BTN_GAP = 12;
+
   const handleGyroClick = async () => {
     if (mode === 'gyro') {
       switchMode('normal');
@@ -46,8 +50,8 @@ export function ModeToggleUI() {
     <div
       style={{
         position: 'fixed',
-        top: 20,
-        right: 20,
+        right: 'calc(20px + env(safe-area-inset-right))',
+        bottom: `calc(${20 + MUSIC_BTN_SIZE + MUSIC_BTN_GAP}px + env(safe-area-inset-bottom))`,
         zIndex: 300,
         display: 'flex',
         gap: 10,
@@ -59,7 +63,7 @@ export function ModeToggleUI() {
       {/* Gyro Button */}
       {capabilities.hasGyroscope && (
         <button
-          className="ui-btn ui-top-btn ui-gyro-btn"
+          className="ui-btn ui-gyro-btn"
           onClick={handleGyroClick}
           aria-label={mode === 'gyro' ? 'Disable gyro' : 'Enable gyro'}
           style={{
