@@ -18,6 +18,11 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)';
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)';
 
+  // Three.js viewer uses an inside-out sphere with an X scale flip.
+  // A-Frame's sky has different handedness, so yaw needs to be inverted
+  // for your same trial-and-error initialView values to match.
+  const AFRAME_YAW_MULT = -1;
+
   const positionTooltipAboveObject = (object3D: THREE.Object3D) => {
     const aScene = sceneRef.current;
     const tooltip = document.getElementById('hotspot-tooltip');
@@ -82,6 +87,15 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         document.body.appendChild(fadeOverlay);
       }
 
+      const MIN_BLACK_MS = 250;
+      const fadeStartMs = performance.now();
+
+      // Always start Gyro/VR by fading to black while A-Frame + the pano initializes.
+      // This makes the *first* panorama load and all scene changes visibly transition.
+      fadeOverlay.style.pointerEvents = 'none';
+      fadeOverlay.style.transition = 'opacity 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      fadeOverlay.style.opacity = '1';
+
       const scene = scenes[modeManager.currentSceneIndex];
       const isVRMode = modeManager.mode === 'vr';
       
@@ -135,12 +149,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
         // Gyro: store offsets so deviceorientation applies the per-panorama alignment.
         const initialYaw = currentScene?.initialView?.yaw ?? 0;
         const initialPitch = currentScene?.initialView?.pitch ?? 0;
-        gyroOffsetsRef.current = { yaw: initialYaw, pitch: initialPitch };
+        const yawForAframe = initialYaw * AFRAME_YAW_MULT;
+        gyroOffsetsRef.current = { yaw: yawForAframe, pitch: initialPitch };
 
         try {
           camera.setAttribute('rotation', {
             x: initialPitch,
-            y: initialYaw,
+            y: yawForAframe,
             z: 0,
           });
         } catch {
@@ -180,7 +195,12 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
               
               // Fade in from black when image loads
               if (fadeOverlay) {
-                fadeOverlay.style.opacity = '0';
+                const elapsed = performance.now() - fadeStartMs;
+                const delay = Math.max(0, MIN_BLACK_MS - elapsed);
+                window.setTimeout(() => {
+                  fadeOverlay!.style.transition = 'opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                  fadeOverlay!.style.opacity = '0';
+                }, delay);
               }
               
               // Set sky to fully opaque immediately - no fade animation to avoid blue flash
@@ -223,8 +243,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
               }
 
               if (fadeOverlay) {
-                fadeOverlay.style.opacity = '0';
-                fadeOverlay.style.pointerEvents = 'none';
+                const elapsed = performance.now() - fadeStartMs;
+                const delay = Math.max(0, MIN_BLACK_MS - elapsed);
+                window.setTimeout(() => {
+                  fadeOverlay!.style.transition = 'opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                  fadeOverlay!.style.opacity = '0';
+                  fadeOverlay!.style.pointerEvents = 'none';
+                }, delay);
               }
 
               if (isGyroMode) {
@@ -254,8 +279,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
                 console.error(`[AframeViewer] ❌ Image load error for ${currentScene?.id}`);
                 setIsLoading(false);
                 if (fadeOverlay) {
-                  fadeOverlay.style.opacity = '0';
-                  fadeOverlay.style.pointerEvents = 'none';
+                  const elapsed = performance.now() - fadeStartMs;
+                  const delay = Math.max(0, MIN_BLACK_MS - elapsed);
+                  window.setTimeout(() => {
+                    fadeOverlay!.style.transition = 'opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                    fadeOverlay!.style.opacity = '0';
+                    fadeOverlay!.style.pointerEvents = 'none';
+                  }, delay);
                 }
               };
               // Also start polling in case onload doesn't fire
@@ -308,6 +338,14 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
       if (sceneMountRef.current) {
         sceneMountRef.current.innerHTML = '';
+      }
+
+      // Ensure we don't leave the screen black when leaving Gyro/VR.
+      const fadeOverlay = document.getElementById('fade-overlay-gyro');
+      if (fadeOverlay) {
+        (fadeOverlay as HTMLDivElement).style.transition = 'none';
+        (fadeOverlay as HTMLDivElement).style.opacity = '0';
+        (fadeOverlay as HTMLDivElement).style.pointerEvents = 'none';
       }
 
       // Remove VR-specific injected CSS
@@ -374,6 +412,26 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           }, 100);
         }
       }, 300);
+
+      // Prefetch likely next panoramas in the background (similar to Three.js viewer).
+      const doPrefetch = () => {
+        const targets = new Set<string>();
+        for (const hs of scene.hotSpots ?? []) {
+          if (hs?.targetSceneId) targets.add(hs.targetSceneId);
+        }
+        for (const id of targets) {
+          const s = scenes.find((x) => x.id === id);
+          if (!s?.url) continue;
+          const img = new Image();
+          img.decoding = 'async';
+          img.loading = 'eager';
+          img.src = s.url;
+        }
+      };
+
+      const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void) => void);
+      if (ric) ric(doPrefetch);
+      else setTimeout(doPrefetch, 0);
     } else {
       // Fallback: add a single hotspot to next scene
       console.log('[AframeViewer] No hotspots defined, adding fallback hotspot');
