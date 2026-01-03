@@ -13,6 +13,16 @@ html, body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Reduce long-press / right-click save affordances (best-effort UI-level protection). */
+img,
+canvas {
+  -webkit-user-drag: none;
+  user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 canvas {
   display: block;
 }

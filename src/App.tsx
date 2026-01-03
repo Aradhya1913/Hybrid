@@ -21,6 +21,30 @@ function AppContent() {
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)'
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)'
 
+  // Reduce casual downloading via right-click/long-press.
+  // Note: determined users can still extract images via devtools/network.
+  useEffect(() => {
+    const preventContextMenu = (e: Event) => {
+      e.preventDefault()
+    }
+
+    const preventDragOnImages = (e: Event) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      const tag = target.tagName
+      if (tag === 'IMG' || tag === 'A-IMAGE') {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('contextmenu', preventContextMenu)
+    document.addEventListener('dragstart', preventDragOnImages)
+    return () => {
+      document.removeEventListener('contextmenu', preventContextMenu)
+      document.removeEventListener('dragstart', preventDragOnImages)
+    }
+  }, [])
+
   // Background music
   useEffect(() => {
     const bgMusic = new Audio('/media/bg.mp3')
