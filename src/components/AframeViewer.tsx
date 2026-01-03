@@ -1015,7 +1015,7 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
           whiteSpace: 'nowrap',
           fontFamily: 'monospace',
           minHeight: 38,
-          display: 'inline-flex',
+          display: modeManager.mode === 'vr' ? 'none' : 'inline-flex',
           alignItems: 'center',
           gap: 8,
           outline: 'none',
