@@ -123,9 +123,14 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const material = new THREE.MeshBasicMaterial({
       side: THREE.BackSide,
       toneMapped: false,
+      // Panorama should behave like a background: disable depth to avoid
+      // z-fighting artifacts during the two-sphere crossfade transition.
+      depthTest: false,
+      depthWrite: false,
     });
     const sphere = new THREE.Mesh(geometry, material);
     sphere.scale.x = -1;
+    sphere.renderOrder = 0;
     scene.add(sphere);
     sphereRef.current = sphere;
 
@@ -317,14 +322,27 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const initialYaw = scene.initialView?.yaw ?? 0;
     const initialPitch = scene.initialView?.pitch ?? 0;
 
-    // Reference behavior: krpano uses BLEND(1) (a 1s crossfade). Implement the same.
+    // Reference behavior: krpano uses BLEND(1) (a 1s crossfade).
+    // Add a tiny hold before the incoming pano becomes visible so it doesn't feel rushed.
     const BLEND_MS = 1000;
+    const BLEND_DELAY_MS = 130;
 
     const clampPitch = (p: number) => Math.max(-85, Math.min(85, p));
     const startYaw = stateRef.current.yaw;
     const startPitch = stateRef.current.pitch;
-    const targetYaw = initialYaw;
+
+    // Normalize delta yaw to avoid huge rotations (degrees in [-180, 180]).
+    const normalizeDeltaYaw = (deg: number) => {
+      let d = ((deg + 180) % 360 + 360) % 360 - 180;
+      // Prefer +180 over -180 for consistency
+      if (d === -180) d = 180;
+      return d;
+    };
+
     const targetPitch = clampPitch(initialPitch);
+    const deltaYaw = normalizeDeltaYaw(initialYaw - startYaw);
+    const deltaPitch = targetPitch - startPitch;
+    const targetYaw = startYaw + deltaYaw;
 
     const smoothstep = (t: number) => t * t * (3 - 2 * t);
 
@@ -340,8 +358,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     isTransitioningRef.current = true;
     inputRef.current.isMouseDown = false;
     inputRef.current.isTouching = false;
-    inputRef.current.touchVelocityX = 0;
-    inputRef.current.touchVelocityY = 0;
+    inputRef.current.velocityYaw = 0;
+    inputRef.current.velocityPitch = 0;
+    inputRef.current.lastMoveTimeMs = 0;
 
     // Update UI early (matches the feel of krpano).
     setCurrentTitle(scene.title);
@@ -364,6 +383,16 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
         texture.encoding = THREE.sRGBEncoding;
 
+        // Snapshot base sphere original rotation so we can restore.
+        const baseRotationStart = baseSphere.rotation.clone();
+
+        // Snap camera state to the target immediately and compensate by rotating
+        // the OLD panorama sphere, so the visible view does NOT spin/jump.
+        stateRef.current.yaw = targetYaw;
+        stateRef.current.pitch = targetPitch;
+        baseSphere.rotation.y += (deltaYaw * Math.PI) / 180;
+        baseSphere.rotation.x += (deltaPitch * Math.PI) / 180;
+
         // Create an overlay sphere for the new pano and blend it in.
         const blendMaterial = new THREE.MeshBasicMaterial({
           side: THREE.BackSide,
@@ -371,17 +400,25 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
           map: texture,
           transparent: true,
           opacity: 0,
+          // Keep depth disabled to prevent crossfade z-fighting.
+          depthTest: false,
+          depthWrite: false,
         });
 
         const blendSphere = new THREE.Mesh(baseSphere.geometry, blendMaterial);
         blendSphere.scale.copy(baseSphere.scale);
-        blendSphere.rotation.copy(baseSphere.rotation);
+        // IMPORTANT: show the *new* pano in its final orientation during the blend.
+        // The baseSphere is temporarily rotated to compensate for the camera snap;
+        // we do NOT want that temporary rotation applied to the incoming pano.
+        blendSphere.rotation.copy(baseRotationStart);
         blendSphere.position.copy(baseSphere.position);
         blendSphere.renderOrder = (baseSphere.renderOrder ?? 0) + 1;
         threeScene.add(blendSphere);
 
         baseMaterial.transparent = true;
         baseMaterial.opacity = 1;
+        baseMaterial.depthTest = false;
+        baseMaterial.depthWrite = false;
 
         const startTime = performance.now();
 
@@ -392,19 +429,18 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
             blendMaterial.dispose();
             baseMaterial.opacity = 1;
             baseMaterial.transparent = false;
+            // Restore base sphere rotation.
+            baseSphere.rotation.copy(baseRotationStart);
             return;
           }
 
-          const rawT = Math.min(1, Math.max(0, (now - startTime) / BLEND_MS));
+          // Delay the *start* of the incoming pano visibility slightly, then ease in.
+          const rawT = Math.min(1, Math.max(0, (now - startTime - BLEND_DELAY_MS) / BLEND_MS));
           const t = smoothstep(rawT);
 
           // Crossfade.
           blendMaterial.opacity = t;
           baseMaterial.opacity = 1 - t;
-
-          // Smoothly move view to the new scene's initial orientation during the blend.
-          stateRef.current.yaw = startYaw + (targetYaw - startYaw) * t;
-          stateRef.current.pitch = clampPitch(startPitch + (targetPitch - startPitch) * t);
 
           if (rawT < 1) {
             requestAnimationFrame(tick);
@@ -416,6 +452,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
           baseMaterial.needsUpdate = true;
           baseMaterial.opacity = 1;
           baseMaterial.transparent = false;
+
+          // Restore base sphere rotation now that it's showing the new pano.
+          baseSphere.rotation.copy(baseRotationStart);
 
           threeScene.remove(blendSphere);
           blendMaterial.dispose();
