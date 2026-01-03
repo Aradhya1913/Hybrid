@@ -5,17 +5,6 @@
   overflow: hidden;
 }
 
-.landing-app {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 800ms ease-in;
-}
-
-.landing-app.is-visible {
-  opacity: 1;
-}
-
 .landing-loader {
   position: fixed;
   inset: 0;
@@ -29,7 +18,7 @@
   place-items: center;
   pointer-events: all;
   opacity: 1;
-  transition: opacity var(--landing-exit-ms, 800ms) ease-out;
+  transition: opacity var(--landing-exit-ms, 450ms) ease;
 }
 
 .landing-loader.is-exiting {
