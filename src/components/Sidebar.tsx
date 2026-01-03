@@ -16,7 +16,7 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
     <>
       {/* Sidebar toggle button */}
       <button
-        className="ui-btn ui-top-btn ui-locations-btn"
+        className={`ui-btn ui-top-btn ui-locations-btn${sidebarOpen ? ' is-open' : ''}`}
         onClick={() => setSidebarOpen((v) => !v)}
         aria-label={sidebarOpen ? 'Close locations' : 'Open locations'}
         style={{
@@ -60,7 +60,12 @@ export function Sidebar({ scenes }: { scenes: SceneDef[] }) {
         }}
       >
         <span className="ui-btn-icon" style={{ fontSize: 16 }}>≡</span>
-        <span className="ui-btn-label">Locations</span>
+        <span
+          className="ui-btn-label"
+          style={{ color: sidebarOpen ? 'rgb(212, 245, 52)' : UI_DARK }}
+        >
+          Locations
+        </span>
       </button>
 
       {/* Sidebar Modal Dialog */}

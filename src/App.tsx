@@ -17,6 +17,7 @@ function AppContent() {
   const UI_NEUTRAL = 'rgba(231, 231, 231, 1)'
   const UI_ACCENT = 'rgba(0, 0, 0, 1)'
   const UI_DARK = 'rgba(30, 30, 30, 1)'
+  const UI_MUSIC_ACTIVE = 'rgb(212, 245, 52)'
 
   const GLASS_BG = 'rgba(231, 231, 231, 0.14)'
   const GLASS_BG_HOVER = 'rgba(231, 231, 231, 0.22)'
@@ -206,7 +207,7 @@ function AppContent() {
           <path
             d={isPlaying ? "M0 12 Q 8 6 16 12 T 32 12 T 48 12 T 64 12" : "M0 12 L 64 12"}
             fill="none"
-            stroke={UI_ACCENT}
+            stroke={isPlaying ? UI_MUSIC_ACTIVE : UI_ACCENT}
             strokeWidth="3"
             strokeLinecap="round"
           >

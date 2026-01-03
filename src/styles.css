@@ -82,6 +82,18 @@ canvas {
     left: calc(10px + env(safe-area-inset-left)) !important;
   }
 
+  /* When the Locations sidebar is open, allow the button to expand and show label */
+  .ui-locations-btn.is-open {
+    width: auto !important;
+    padding: 10px 14px !important;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+  }
+
+  .ui-locations-btn.is-open .ui-btn-label {
+    display: inline !important;
+  }
+
   .ui-gyro-btn {
     right: calc(10px + env(safe-area-inset-right)) !important;
   }
