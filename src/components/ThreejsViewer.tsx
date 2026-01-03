@@ -46,9 +46,19 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     isTouching: false,
     lastTouchX: 0,
     lastTouchY: 0,
-    touchVelocityX: 0,
-    touchVelocityY: 0,
+    // Inertial angular velocity (degrees/sec)
+    velocityYaw: 0,
+    velocityPitch: 0,
+    lastMoveTimeMs: 0,
   });
+
+  // Interaction tuning (aims to feel closer to krpano: smooth + weighted, not twitchy)
+  const DRAG_SENSITIVITY_MOUSE = 0.16; // deg / px
+  const DRAG_SENSITIVITY_TOUCH = 0.14; // deg / px
+  const AXIS_LOCK_RATIO = 1.6; // higher = stronger axis preference
+  const AXIS_DAMP_SECONDARY = 0.25; // 0..1 (smaller = less cross-axis drift)
+  const MAX_VELOCITY_DEG_PER_SEC = 220;
+  const INERTIA_FRICTION = 7.5; // higher = stops sooner; lower = glides longer
 
   const animationRef = useRef({
     time: 0,
@@ -238,12 +248,24 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       }
 
       // Apply inertia (skip while transitioning)
-      if (!isTransitioningRef.current && inputRef.current.isTouching) {
-        inputRef.current.touchVelocityX *= 0.95;
-        inputRef.current.touchVelocityY *= 0.95;
+      if (!isTransitioningRef.current && !inputRef.current.isMouseDown && !inputRef.current.isTouching) {
+        const dt = animationRef.current.deltaTime;
+        if (dt > 0) {
+          // Apply momentum
+          if (Math.abs(inputRef.current.velocityYaw) > 0.001 || Math.abs(inputRef.current.velocityPitch) > 0.001) {
+            stateRef.current.yaw += inputRef.current.velocityYaw * dt;
+            stateRef.current.pitch += inputRef.current.velocityPitch * dt;
 
-        stateRef.current.yaw += inputRef.current.touchVelocityX * 0.5;
-        stateRef.current.pitch += inputRef.current.touchVelocityY * 0.5;
+            // Exponential decay for frame-rate independent damping
+            const decay = Math.exp(-INERTIA_FRICTION * dt);
+            inputRef.current.velocityYaw *= decay;
+            inputRef.current.velocityPitch *= decay;
+
+            // Snap to zero to avoid endless drifting
+            if (Math.abs(inputRef.current.velocityYaw) < 0.02) inputRef.current.velocityYaw = 0;
+            if (Math.abs(inputRef.current.velocityPitch) < 0.02) inputRef.current.velocityPitch = 0;
+          }
+        }
       }
 
       // Clamp pitch
@@ -625,6 +647,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       inputRef.current.isMouseDown = true;
       inputRef.current.lastMouseX = e.clientX;
       inputRef.current.lastMouseY = e.clientY;
+      inputRef.current.lastMoveTimeMs = performance.now();
+      inputRef.current.velocityYaw = 0;
+      inputRef.current.velocityPitch = 0;
       canvas.style.cursor = 'grabbing';
     };
 
@@ -644,9 +669,33 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       const deltaX = e.clientX - inputRef.current.lastMouseX;
       const deltaY = e.clientY - inputRef.current.lastMouseY;
 
-      stateRef.current.yaw += deltaX * 0.5;
-      stateRef.current.pitch += deltaY * 0.5;
+      const now = performance.now();
+      const dt = Math.max(0.001, (now - (inputRef.current.lastMoveTimeMs || now)) / 1000);
+      inputRef.current.lastMoveTimeMs = now;
+
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      let xFactor = 1;
+      let yFactor = 1;
+      if (absX > absY * AXIS_LOCK_RATIO) yFactor = AXIS_DAMP_SECONDARY;
+      else if (absY > absX * AXIS_LOCK_RATIO) xFactor = AXIS_DAMP_SECONDARY;
+
+      const yawDelta = deltaX * DRAG_SENSITIVITY_MOUSE * xFactor;
+      const pitchDelta = deltaY * DRAG_SENSITIVITY_MOUSE * yFactor;
+
+      stateRef.current.yaw += yawDelta;
+      stateRef.current.pitch += pitchDelta;
       stateRef.current.pitch = Math.max(-85, Math.min(85, stateRef.current.pitch));
+
+      // Store velocity for inertial glide
+      inputRef.current.velocityYaw = Math.max(
+        -MAX_VELOCITY_DEG_PER_SEC,
+        Math.min(MAX_VELOCITY_DEG_PER_SEC, yawDelta / dt)
+      );
+      inputRef.current.velocityPitch = Math.max(
+        -MAX_VELOCITY_DEG_PER_SEC,
+        Math.min(MAX_VELOCITY_DEG_PER_SEC, pitchDelta / dt)
+      );
 
       inputRef.current.lastMouseX = e.clientX;
       inputRef.current.lastMouseY = e.clientY;
@@ -705,8 +754,9 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       inputRef.current.isTouching = true;
       inputRef.current.lastTouchX = e.touches[0].clientX;
       inputRef.current.lastTouchY = e.touches[0].clientY;
-      inputRef.current.touchVelocityX = 0;
-      inputRef.current.touchVelocityY = 0;
+      inputRef.current.lastMoveTimeMs = performance.now();
+      inputRef.current.velocityYaw = 0;
+      inputRef.current.velocityPitch = 0;
       e.preventDefault();
     };
 
@@ -720,12 +770,33 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
       const deltaX = currentX - inputRef.current.lastTouchX;
       const deltaY = currentY - inputRef.current.lastTouchY;
 
-      inputRef.current.touchVelocityX = deltaX;
-      inputRef.current.touchVelocityY = deltaY;
+      const now = performance.now();
+      const dt = Math.max(0.001, (now - (inputRef.current.lastMoveTimeMs || now)) / 1000);
+      inputRef.current.lastMoveTimeMs = now;
 
-      stateRef.current.yaw += deltaX * 0.05;
-      stateRef.current.pitch += deltaY * 0.05;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      let xFactor = 1;
+      let yFactor = 1;
+      if (absX > absY * AXIS_LOCK_RATIO) yFactor = AXIS_DAMP_SECONDARY;
+      else if (absY > absX * AXIS_LOCK_RATIO) xFactor = AXIS_DAMP_SECONDARY;
+
+      const yawDelta = deltaX * DRAG_SENSITIVITY_TOUCH * xFactor;
+      const pitchDelta = deltaY * DRAG_SENSITIVITY_TOUCH * yFactor;
+
+      stateRef.current.yaw += yawDelta;
+      stateRef.current.pitch += pitchDelta;
       stateRef.current.pitch = Math.max(-85, Math.min(85, stateRef.current.pitch));
+
+      // Store velocity for inertial glide after release
+      inputRef.current.velocityYaw = Math.max(
+        -MAX_VELOCITY_DEG_PER_SEC,
+        Math.min(MAX_VELOCITY_DEG_PER_SEC, yawDelta / dt)
+      );
+      inputRef.current.velocityPitch = Math.max(
+        -MAX_VELOCITY_DEG_PER_SEC,
+        Math.min(MAX_VELOCITY_DEG_PER_SEC, pitchDelta / dt)
+      );
 
       inputRef.current.lastTouchX = currentX;
       inputRef.current.lastTouchY = currentY;
