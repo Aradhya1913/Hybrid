@@ -24,7 +24,9 @@ export default function Landing() {
 
   return (
     <div className="landing-root">
-      <App />
+      <div className={`landing-app ${phase === 'hidden' ? 'is-visible' : ''}`}>
+        <App />
+      </div>
 
       {showLoader && (
         <div
