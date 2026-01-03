@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useModeManager } from './ModeManager';
 import { useVRDetection } from '../hooks/useVRDetection';
 
@@ -6,6 +6,7 @@ export function ModeToggleUI() {
   const { mode, capabilities, switchMode } = useModeManager();
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAutoTourEnabled, setIsAutoTourEnabled] = useState(false);
 
   const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
@@ -129,6 +130,21 @@ export function ModeToggleUI() {
     hoverSound.play().catch(() => {});
   };
 
+  // Keep Auto Tour state in sync if it gets stopped from elsewhere
+  useEffect(() => {
+    const handleAutoTourStopped = () => setIsAutoTourEnabled(false);
+    window.addEventListener('auto-tour-stop', handleAutoTourStopped);
+    return () => window.removeEventListener('auto-tour-stop', handleAutoTourStopped);
+  }, []);
+
+  // If leaving normal mode, ensure Auto Tour is off.
+  useEffect(() => {
+    if (mode !== 'normal' && isAutoTourEnabled) {
+      setIsAutoTourEnabled(false);
+      window.dispatchEvent(new CustomEvent('auto-tour-set', { detail: { enabled: false } }));
+    }
+  }, [mode, isAutoTourEnabled]);
+
   const mainButtonLabel = mode === 'vr' ? 'VR' : mode === 'gyro' ? 'Gyro' : 'Modes';
 
   return (
@@ -200,6 +216,56 @@ export function ModeToggleUI() {
             alignItems: 'flex-end',
           }}
         >
+          {mode === 'normal' && (
+            <button
+              className="ui-btn ui-auto-tour-btn"
+              onClick={() => {
+                const next = !isAutoTourEnabled;
+                setIsAutoTourEnabled(next);
+                window.dispatchEvent(new CustomEvent('auto-tour-set', { detail: { enabled: next } }));
+                // Keep the menu open so the user can still switch modes if desired.
+              }}
+              aria-label={isAutoTourEnabled ? 'Stop Tour' : 'Start Tour'}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 4,
+                background: GLASS_BG,
+                color: UI_DARK,
+                border: `2px solid ${UI_ACCENT}`,
+                borderTop: 'none',
+                borderLeft: 'none',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 500,
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.2s ease',
+                transform: 'scale(1)',
+                pointerEvents: 'auto',
+                whiteSpace: 'nowrap',
+                fontFamily: 'monospace',
+                minHeight: 38,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = GLASS_BG_HOVER;
+                el.style.transform = 'scale(1.05)';
+                playHoverSound();
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = GLASS_BG;
+                el.style.transform = 'scale(1)';
+              }}
+            >
+              <span className="ui-btn-icon" style={{ fontSize: 16 }}>⌂</span>
+              <span className="ui-btn-label">{isAutoTourEnabled ? 'Stop Tour' : 'Start Tour'}</span>
+            </button>
+          )}
+
           <button
             className="ui-btn ui-vr-btn"
             onClick={() => {

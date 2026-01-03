@@ -71,6 +71,15 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
   const sceneLoadIdRef = useRef(0);
   const isTransitioningRef = useRef(false);
 
+  const isAutoTourRef = useRef(false);
+  const autoTourTokenRef = useRef(0);
+  const autoTourExpectedIndexRef = useRef<number | null>(null);
+  const currentSceneIndexRef = useRef(0);
+
+  useEffect(() => {
+    currentSceneIndexRef.current = modeManager.currentSceneIndex;
+  }, [modeManager.currentSceneIndex]);
+
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const isCoarsePointerRef = useRef(false);
   const centerPointerRef = useRef<THREE.Vector2>(new THREE.Vector2(0, 0));
@@ -629,6 +638,21 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
   useEffect(() => {
     const handleSceneChange = (e: Event) => {
       const event = e as CustomEvent;
+
+      // If Auto Tour is running and the scene change wasn't one we requested,
+      // stop it (e.g., user clicked sidebar).
+      const nextIndex = event?.detail?.index;
+      if (isAutoTourRef.current) {
+        if (autoTourExpectedIndexRef.current == null || autoTourExpectedIndexRef.current !== nextIndex) {
+          isAutoTourRef.current = false;
+          autoTourTokenRef.current++;
+          autoTourExpectedIndexRef.current = null;
+          window.dispatchEvent(new CustomEvent('auto-tour-stop'));
+        } else {
+          autoTourExpectedIndexRef.current = null;
+        }
+      }
+
       loadScene(event.detail.index);
     };
     window.addEventListener('scene-changed', handleSceneChange);
@@ -637,6 +661,113 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     };
   }, []);
 
+  // Auto Tour controller (video-like experience)
+  useEffect(() => {
+    const ROTATION_DEG = -360; // rotate to the right
+    const ROTATION_MS = 11000; // 50% slower (smoother, more "video-like")
+
+    const easeInOut = (t: number) => t * t * (3 - 2 * t);
+
+    const stopAutoTour = () => {
+      if (!isAutoTourRef.current) return;
+      isAutoTourRef.current = false;
+      autoTourTokenRef.current++;
+      autoTourExpectedIndexRef.current = null;
+      window.dispatchEvent(new CustomEvent('auto-tour-stop'));
+    };
+
+    const waitForNotTransitioning = (token: number) =>
+      new Promise<void>((resolve) => {
+        const tick = () => {
+          if (token !== autoTourTokenRef.current || !isAutoTourRef.current) return;
+          if (!isTransitioningRef.current) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+
+    const rotateOnce = (token: number) =>
+      new Promise<void>((resolve) => {
+        const startYaw = stateRef.current.yaw;
+        const startPitch = stateRef.current.pitch;
+        const startTime = performance.now();
+
+        // Cancel any inertia.
+        inputRef.current.velocityYaw = 0;
+        inputRef.current.velocityPitch = 0;
+
+        const tick = (now: number) => {
+          if (token !== autoTourTokenRef.current || !isAutoTourRef.current) return;
+          if (isTransitioningRef.current) {
+            requestAnimationFrame(tick);
+            return;
+          }
+
+          const rawT = Math.min(1, Math.max(0, (now - startTime) / ROTATION_MS));
+          const t = easeInOut(rawT);
+          stateRef.current.yaw = startYaw + ROTATION_DEG * t;
+          stateRef.current.pitch = startPitch;
+
+          if (rawT < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            resolve();
+          }
+        };
+
+        requestAnimationFrame(tick);
+      });
+
+    const run = async (token: number) => {
+      while (token === autoTourTokenRef.current && isAutoTourRef.current) {
+        await waitForNotTransitioning(token);
+        if (token !== autoTourTokenRef.current || !isAutoTourRef.current) return;
+
+        await rotateOnce(token);
+        if (token !== autoTourTokenRef.current || !isAutoTourRef.current) return;
+
+        // Advance to next scene.
+        const nextIndex = (currentSceneIndexRef.current + 1) % scenes.length;
+        autoTourExpectedIndexRef.current = nextIndex;
+        modeManager.setCurrentScene(nextIndex);
+      }
+    };
+
+    const handleAutoTourSet = (e: Event) => {
+      const event = e as CustomEvent;
+      const enabled = !!event?.detail?.enabled;
+      if (!enabled) {
+        stopAutoTour();
+        return;
+      }
+
+      if (isAutoTourRef.current) return;
+      isAutoTourRef.current = true;
+      autoTourExpectedIndexRef.current = null;
+
+      // Clear any user-driven motion.
+      inputRef.current.isMouseDown = false;
+      inputRef.current.isTouching = false;
+      inputRef.current.velocityYaw = 0;
+      inputRef.current.velocityPitch = 0;
+
+      const token = ++autoTourTokenRef.current;
+      run(token);
+    };
+
+    window.addEventListener('auto-tour-set', handleAutoTourSet);
+    return () => {
+      window.removeEventListener('auto-tour-set', handleAutoTourSet);
+      // Ensure stopped on unmount.
+      isAutoTourRef.current = false;
+      autoTourTokenRef.current++;
+      autoTourExpectedIndexRef.current = null;
+    };
+  }, [modeManager.setCurrentScene, scenes.length]);
+
   // Mouse input
   useEffect(() => {
     const canvas = rendererRef.current?.domElement;
@@ -644,6 +775,12 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
 
     const handleMouseDown = (e: MouseEvent) => {
       if (isTransitioningRef.current) return;
+      if (isAutoTourRef.current) {
+        isAutoTourRef.current = false;
+        autoTourTokenRef.current++;
+        autoTourExpectedIndexRef.current = null;
+        window.dispatchEvent(new CustomEvent('auto-tour-stop'));
+      }
       inputRef.current.isMouseDown = true;
       inputRef.current.lastMouseX = e.clientX;
       inputRef.current.lastMouseY = e.clientY;
@@ -710,6 +847,12 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const handleClick = (e: MouseEvent) => {
       // Trigger hotspot clicks from anywhere on screen
       if (isTransitioningRef.current) return;
+      if (isAutoTourRef.current) {
+        isAutoTourRef.current = false;
+        autoTourTokenRef.current++;
+        autoTourExpectedIndexRef.current = null;
+        window.dispatchEvent(new CustomEvent('auto-tour-stop'));
+      }
       console.log('[ThreejsViewer] Click event detected at', e.clientX, e.clientY);
       checkHotspotIntersection(e.clientX, e.clientY);
     };
@@ -748,6 +891,12 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
       if (isTransitioningRef.current) return;
+      if (isAutoTourRef.current) {
+        isAutoTourRef.current = false;
+        autoTourTokenRef.current++;
+        autoTourExpectedIndexRef.current = null;
+        window.dispatchEvent(new CustomEvent('auto-tour-stop'));
+      }
       touchStartTime = Date.now();
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
