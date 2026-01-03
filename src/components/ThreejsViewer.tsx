@@ -322,10 +322,8 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
     const initialYaw = scene.initialView?.yaw ?? 0;
     const initialPitch = scene.initialView?.pitch ?? 0;
 
-    // Reference behavior: krpano uses BLEND(1) (a 1s crossfade).
-    // Add a tiny hold before the incoming pano becomes visible so it doesn't feel rushed.
+    // Reference behavior: krpano uses BLEND(1) (a 1s crossfade). Implement the same.
     const BLEND_MS = 1000;
-    const BLEND_DELAY_MS = 130;
 
     const clampPitch = (p: number) => Math.max(-85, Math.min(85, p));
     const startYaw = stateRef.current.yaw;
@@ -434,8 +432,7 @@ export function ThreejsViewer({ scenes }: { scenes: SceneDef[] }) {
             return;
           }
 
-          // Delay the *start* of the incoming pano visibility slightly, then ease in.
-          const rawT = Math.min(1, Math.max(0, (now - startTime - BLEND_DELAY_MS) / BLEND_MS));
+          const rawT = Math.min(1, Math.max(0, (now - startTime) / BLEND_MS));
           const t = smoothstep(rawT);
 
           // Crossfade.
