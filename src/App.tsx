@@ -53,20 +53,28 @@ function AppContent() {
     bgMusic.volume = 0.14
     bgMusicRef.current = bgMusic
 
+    let hasStartedOnce = false
+
     // Play on first user interaction (required by browsers)
     const tryAutoPlay = () => {
       if (userManuallyPausedRef.current) return
       if (!bgMusicRef.current) return
       if (!bgMusicRef.current.paused) return
+      if (hasStartedOnce) return
 
-      bgMusicRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true)
-        })
-        .catch(() => {
-          // Keep listeners so the next interaction can retry.
-        })
+      // Add a small delay to avoid overlapping with transition.mp3
+      setTimeout(() => {
+        if (!bgMusicRef.current) return
+        bgMusicRef.current
+          .play()
+          .then(() => {
+            setIsPlaying(true)
+            hasStartedOnce = true
+          })
+          .catch(() => {
+            // Keep listeners so the next interaction can retry.
+          })
+      }, 600)
     }
 
     // Use capture so we still get the event even if a button stops propagation.

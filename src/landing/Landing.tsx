@@ -6,16 +6,27 @@ type Phase = 'enter' | 'exit' | 'hidden'
 
 export default function Landing() {
   const totalMs = useMemo(() => 2400, [])
-  const exitMs = useMemo(() => 450, [])
+  const exitMs = useMemo(() => 800, [])
 
   const [phase, setPhase] = useState<Phase>('enter')
+  const [appVisible, setAppVisible] = useState(false)
 
   useEffect(() => {
-    const exitTimer = window.setTimeout(() => setPhase('exit'), totalMs)
+    const exitTimer = window.setTimeout(() => {
+      setPhase('exit')
+    }, totalMs)
+    const showAppTimer = window.setTimeout(() => {
+      setAppVisible(true)
+      // Play transition sound when app becomes visible
+      const transitionSound = new Audio('/media/transition.mp3')
+      transitionSound.volume = 0.5
+      transitionSound.play().catch(() => {})
+    }, totalMs + 300)
     const hideTimer = window.setTimeout(() => setPhase('hidden'), totalMs + exitMs)
 
     return () => {
       window.clearTimeout(exitTimer)
+      window.clearTimeout(showAppTimer)
       window.clearTimeout(hideTimer)
     }
   }, [totalMs, exitMs])
@@ -24,7 +35,9 @@ export default function Landing() {
 
   return (
     <div className="landing-root">
-      <App />
+      <div className={`landing-app ${appVisible ? 'is-visible' : ''}`}>
+        <App />
+      </div>
 
       {showLoader && (
         <div
