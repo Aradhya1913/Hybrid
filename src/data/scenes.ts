@@ -165,7 +165,7 @@ hotSpots: [
 
     ]
   },
-  { id: 'Way to mech', title: 'Spot 11', url: '/panos/spot11.jpg'   ,initialView: { yaw: 90, pitch: 0 },
+  { id: 'spot11', title: 'Way to mech', url: '/panos/spot11.jpg'   ,initialView: { yaw: 90, pitch: 0 },
 
       hotSpots: [
       { yaw: 90, pitch: -10, targetSceneId: 'spot9', text: 'Library' },
