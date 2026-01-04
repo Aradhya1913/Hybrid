@@ -52,7 +52,7 @@ const scenes: SceneDef[] = [
     url: '/panos/spot3.jpg',
     initialView: { yaw: 90, pitch: 0 },
     hotSpots: [
-      { yaw: 15, pitch: -7, targetSceneId: 'spot2', text: 'Road' },
+      { yaw: 100, pitch: -4, targetSceneId: 'spot2', text: 'Road' },
       { yaw: 270, pitch: -4, targetSceneId: 'spot4', text: 'Road' },
     ]
   },
@@ -141,7 +141,7 @@ const scenes: SceneDef[] = [
   { id: 'spot8', title: 'Spot 8', url: '/panos/spot8.jpg' },
  
   { id: 'spot9', 
-    title: 'CSE', 
+    title: 'CSE Block', 
     url: '/panos/spot9.jpg', 
     hotSpots: [
       { yaw: 90, pitch: -10, targetSceneId: 'spot2b', text: 'Library' },
@@ -151,14 +151,19 @@ const scenes: SceneDef[] = [
 
     ]},
 
-  { id: 'spot10', title: 'Spot 10', url: '/panos/spot10.jpg' 
+  { id: 'spot10', title: 'CSE Building', url: '/panos/spot10.jpg' 
       ,hotSpots: [
       { yaw: 90, pitch: -10, targetSceneId: 'spot9', text: 'Library' },
       
 
     ]
   },
-  { id: 'spot11', title: 'Spot 11', url: '/panos/spot11.jpg' }
+  { id: 'spot11', title: 'Spot 11', url: '/panos/spot11.jpg'
+      ,hotSpots: [
+      { yaw: 90, pitch: -10, targetSceneId: 'spot9', text: 'Library' },
+    ]
+   }
+  
 ];
 
 export default scenes;
