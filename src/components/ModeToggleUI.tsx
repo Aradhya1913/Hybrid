@@ -142,9 +142,10 @@ export function ModeToggleUI() {
     return () => window.removeEventListener('auto-tour-stop', handleAutoTourStopped);
   }, []);
 
-  // If leaving normal mode, ensure Auto Tour is off.
+  // Auto Tour is allowed in both normal and VR modes
+  // (Gyro mode doesn't support it well due to device orientation conflicts)
   useEffect(() => {
-    if (mode !== 'normal' && isAutoTourEnabled) {
+    if (mode === 'gyro' && isAutoTourEnabled) {
       setIsAutoTourEnabled(false);
       window.dispatchEvent(new CustomEvent('auto-tour-set', { detail: { enabled: false } }));
     }
@@ -277,53 +278,112 @@ export function ModeToggleUI() {
         </button>
       )}
 
-      {/* Exit button for VR mode */}
+      {/* Exit button for VR mode + Auto Tour toggle */}
       {!isMenuOpen && mode === 'vr' && (
-        <button
-          className="ui-btn ui-mode-btn"
-          onClick={handleVRClick}
-          aria-label="Exit VR"
+        <div
           style={{
-            padding: '10px 14px',
-            borderRadius: 4,
-            background: GLASS_BG,
-            color: UI_DARK,
-            border: `2px solid ${UI_ACCENT}`,
-            borderTop: 'none',
-            borderLeft: 'none',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 500,
-            backdropFilter: 'blur(10px)',
-            transition: 'all 0.2s ease',
-            transform: 'scale(1)',
-            pointerEvents: 'auto',
-            whiteSpace: 'nowrap',
-            fontFamily: 'monospace',
-            minHeight: 38,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            outline: 'none',
-          }}
-          onMouseEnter={(e) => {
-            const el = e.currentTarget as HTMLButtonElement;
-            el.style.background = GLASS_BG_HOVER;
-            el.style.transform = 'scale(1.05)';
-            playHoverSound();
-          }}
-          onMouseLeave={(e) => {
-            const el = e.currentTarget as HTMLButtonElement;
-            el.style.background = GLASS_BG;
-            el.style.transform = 'scale(1)';
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            alignItems: 'flex-end',
           }}
         >
-          <span className="ui-btn-icon" style={{ fontSize: 16 }}>
-            🕶
-          </span>
-          <span className="ui-btn-label">Exit VR</span>
-        </button>
+          <button
+            className="ui-btn ui-mode-btn"
+            onClick={() => {
+              const next = !isAutoTourEnabled;
+              setIsAutoTourEnabled(next);
+              window.dispatchEvent(new CustomEvent('auto-tour-set', { detail: { enabled: next } }));
+            }}
+            aria-label={isAutoTourEnabled ? 'Stop Tour' : 'Start Tour'}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 4,
+              background: GLASS_BG,
+              color: UI_DARK,
+              border: `2px solid ${UI_ACCENT}`,
+              borderTop: 'none',
+              borderLeft: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              backdropFilter: 'blur(10px)',
+              transition: 'all 0.2s ease',
+              transform: 'scale(1)',
+              pointerEvents: 'auto',
+              whiteSpace: 'nowrap',
+              fontFamily: 'monospace',
+              minHeight: 38,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              outline: 'none',
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG_HOVER;
+              el.style.transform = 'scale(1.05)';
+              playHoverSound();
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG;
+              el.style.transform = 'scale(1)';
+            }}
+          >
+            <span className="ui-btn-icon" style={{ fontSize: 16 }}>
+              {isAutoTourEnabled ? '■' : '▶'}
+            </span>
+            <span className="ui-btn-label">{isAutoTourEnabled ? 'Stop Tour' : 'Start Tour'}</span>
+          </button>
+
+          <button
+            className="ui-btn ui-mode-btn"
+            onClick={handleVRClick}
+            aria-label="Exit VR"
+            style={{
+              padding: '10px 14px',
+              borderRadius: 4,
+              background: GLASS_BG,
+              color: UI_DARK,
+              border: `2px solid ${UI_ACCENT}`,
+              borderTop: 'none',
+              borderLeft: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              backdropFilter: 'blur(10px)',
+              transition: 'all 0.2s ease',
+              transform: 'scale(1)',
+              pointerEvents: 'auto',
+              whiteSpace: 'nowrap',
+              fontFamily: 'monospace',
+              minHeight: 38,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              outline: 'none',
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG_HOVER;
+              el.style.transform = 'scale(1.05)';
+              playHoverSound();
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = GLASS_BG;
+              el.style.transform = 'scale(1)';
+            }}
+          >
+            <span className="ui-btn-icon" style={{ fontSize: 16 }}>
+              🕶
+            </span>
+            <span className="ui-btn-label">Exit VR</span>
+          </button>
+        </div>
       )}
 
       {/* Exit button for Gyro mode */}

@@ -12,6 +12,13 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
 
   const gyroOffsetsRef = useRef<{ yaw: number; pitch: number }>({ yaw: 0, pitch: 0 });
   const gyroOrientationCleanupRef = useRef<null | (() => void)>(null);
+  const wakeLockRef = useRef<any>(null);
+  const autoTourRef = useRef<{ enabled: boolean; token: number; startTime: number; startYaw: number }>({
+    enabled: false,
+    token: 0,
+    startTime: 0,
+    startYaw: 0,
+  });
 
   const UI_ACCENT = 'rgba(0, 0, 0, 1)';
   const UI_DARK = 'rgba(30, 30, 30, 1)';
@@ -40,7 +47,160 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     tooltip.style.transform = 'translate(-50%, -100%)';
   };
 
+  // Keep screen awake during gyro/VR mode
   useEffect(() => {
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('[AframeViewer] Wake Lock activated');
+        } else {
+          console.log('[AframeViewer] Wake Lock API not supported');
+        }
+      } catch (err) {
+        console.warn('[AframeViewer] Wake Lock request failed:', err);
+      }
+    };
+
+    const releaseWakeLock = async () => {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+          console.log('[AframeViewer] Wake Lock released');
+        } catch (err) {
+          console.warn('[AframeViewer] Wake Lock release failed:', err);
+        }
+      }
+    };
+
+    // Request wake lock when in gyro or VR mode
+    if (modeManager.mode === 'gyro' || modeManager.mode === 'vr') {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    // Re-request wake lock if document becomes visible again (handles tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && (modeManager.mode === 'gyro' || modeManager.mode === 'vr')) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [modeManager.mode]);
+
+  // Auto Tour support for VR
+  useEffect(() => {
+    const ROTATION_MS = 16000; // 16 seconds for 360° rotation (50% slower to prevent dizziness in VR)
+    const ROTATION_DEG = -360; // Rotate to the right
+
+    // Listen for scene changes and restart auto tour if it was running
+    const handleSceneChange = () => {
+      if (autoTourRef.current.enabled && modeManager.mode === 'vr') {
+        console.log('[AframeViewer] Scene changed, restarting auto tour in 2 seconds');
+        // Re-dispatch the auto-tour-set event to restart the tour
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('auto-tour-set', { detail: { enabled: true } }));
+        }, 3500); // 2 second delay to let scene fully load
+      }
+    };
+
+    window.addEventListener('scene-changed', handleSceneChange);
+
+    const handleAutoTourSet = (e: Event) => {
+      const event = e as CustomEvent;
+      const enabled = !!event?.detail?.enabled;
+      
+      console.log('[AframeViewer] Auto Tour set:', enabled, 'mode:', modeManager.mode);
+      
+      if (!enabled) {
+        autoTourRef.current.enabled = false;
+        autoTourRef.current.token++;
+        return;
+      }
+
+      if (modeManager.mode !== 'vr') {
+        console.log('[AframeViewer] Not in VR mode, ignoring auto tour');
+        return; // Only in VR mode
+      }
+
+      autoTourRef.current.enabled = true;
+      autoTourRef.current.token++;
+      autoTourRef.current.startTime = performance.now();
+      autoTourRef.current.startYaw = 0;
+
+      const token = autoTourRef.current.token;
+      console.log('[AframeViewer] Starting auto tour with token:', token);
+
+      const runTour = () => {
+        if (!autoTourRef.current.enabled || token !== autoTourRef.current.token) {
+          console.log('[AframeViewer] Auto tour stopped');
+          return;
+        }
+        if (modeManager.mode !== 'vr') {
+          console.log('[AframeViewer] Left VR mode, stopping auto tour');
+          autoTourRef.current.enabled = false;
+          return;
+        }
+
+        const aScene = sceneRef.current;
+        if (!aScene) {
+          console.log('[AframeViewer] No scene, waiting...');
+          requestAnimationFrame(runTour);
+          return;
+        }
+
+        const sky = aScene.querySelector('#app-sky');
+        if (!sky) {
+          console.log('[AframeViewer] No sky, waiting for scene to load...');
+          requestAnimationFrame(runTour);
+          return;
+        }
+
+        const now = performance.now();
+        const elapsed = now - autoTourRef.current.startTime;
+        const t = Math.min(1, elapsed / ROTATION_MS);
+
+        // In VR, rotate the sky instead of the camera (which is controlled by headset)
+        // This creates the same effect of rotating the world while allowing free head movement
+        const currentYaw = autoTourRef.current.startYaw + (ROTATION_DEG * t);
+        
+        const rotation = sky.getAttribute('rotation') || { x: 0, y: 0, z: 0 };
+        sky.setAttribute('rotation', { x: rotation.x, y: currentYaw, z: rotation.z });
+
+        if (t >= 1) {
+          // Completed one rotation, advance to next scene
+          console.log('[AframeViewer] Rotation complete, advancing scene');
+          const nextIndex = (modeManager.currentSceneIndex + 1) % scenes.length;
+          modeManager.setCurrentScene(nextIndex);
+          // Scene change listener will restart the tour
+          return;
+        }
+
+        requestAnimationFrame(runTour);
+      };
+
+      requestAnimationFrame(runTour);
+    };
+
+    window.addEventListener('auto-tour-set', handleAutoTourSet);
+    return () => {
+      window.removeEventListener('auto-tour-set', handleAutoTourSet);
+      window.removeEventListener('scene-changed', handleSceneChange);
+      autoTourRef.current.enabled = false;
+      autoTourRef.current.token++;
+    };
+  }, [modeManager, scenes.length]);
+
+  useEffect(() => {
+
     if (!sceneMountRef.current) return;
 
     // Initialize A-Frame if not already loaded
@@ -1148,3 +1308,4 @@ export function AframeViewer({ scenes }: { scenes: SceneDef[] }) {
     </div>
   );
 }
+
