@@ -136,9 +136,16 @@ const scenes: SceneDef[] = [
 
      hotSpots: [
       { yaw: 260, pitch: -15, targetSceneId: 'spot9', text: 'Library' },
+      { yaw: 0, pitch: -15, targetSceneId: 'spot8', text: 'Library' },
+
      ]
   },
-  { id: 'spot8', title: 'Spot 8', url: '/panos/spot8.jpg' },
+  { id: 'spot8', title: 'Canteen', url: '/panos/spot8.jpg' 
+    ,    initialView: { yaw: 40, pitch: 0 },
+hotSpots: [
+      { yaw: 90, pitch: -10, targetSceneId: 'spot9', text: 'Library' },
+      
+    ] },
  
   { id: 'spot9', 
     title: 'CSE Block', 
@@ -158,8 +165,9 @@ const scenes: SceneDef[] = [
 
     ]
   },
-  { id: 'spot11', title: 'Spot 11', url: '/panos/spot11.jpg'
-      ,hotSpots: [
+  { id: 'Way to mech', title: 'Spot 11', url: '/panos/spot11.jpg'   ,initialView: { yaw: 90, pitch: 0 },
+
+      hotSpots: [
       { yaw: 90, pitch: -10, targetSceneId: 'spot9', text: 'Library' },
     ]
    }
